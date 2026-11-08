@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>From Custom GPT to Standalone AI App: Why I Built AI App Studio</title><style>body{max-width:780px;margin:50px auto;padding:0 24px;color:#242424;background:#fff;font:18px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}h1{font-size:36px;line-height:1.2;margin-bottom:30px}h2{font-size:26px;line-height:1.3;margin:36px 0 16px}p{margin:0 0 20px}a{color:#0a66c2;text-underline-offset:3px}img{display:block;max-width:100%;height:auto;margin:24px auto 12px}blockquote{border-left:4px solid #69786c;margin:28px 0;padding:4px 0 4px 22px;font-size:22px}blockquote p{margin:0}li{margin-bottom:10px}em{color:#555;font-size:16px}@media print{body{max-width:none;margin:0;font-size:12pt}h1{font-size:24pt}h2{font-size:18pt}}</style></head><body><article><h1>From Custom GPT to Standalone AI App: Why I Built AI App Studio</h1>
+<p>Your team’s most useful Custom GPT may already be a business application in disguise.</p>
+<p>It starts with someone solving a recurring problem. A colleague tries it. A team adopts it. Before long, a process depends on it.</p>
+<p>Then someone asks: <strong>“What happens if this stops working?”</strong></p>
+<p>That question is the reason I created <strong>AI App Studio</strong>.</p>
+<h2>What is a Custom GPT?</h2>
+<p>A Custom GPT is a version of ChatGPT configured for a particular purpose. It combines instructions, reference knowledge, and selected capabilities to create a tailored assistant inside ChatGPT.</p>
+<p>A team might build one to explain company policies, support research, or guide an operational task. The appeal is straightforward: people who understand the work can shape an assistant around it.</p>
+<p>For readers new to the concept, <a href="https://help.openai.com/en/articles/8554407-gpts-in-chatgpt">OpenAI’s guide to GPTs</a> explains the building blocks.</p>
+<h2>Custom GPT retirement creates a decision point</h2>
+<p>OpenAI is retiring Custom GPTs and providing a migration path to plugins. Its published guidance schedules standard retirement for <strong>December 11, 2026</strong>.</p>
+<p>FedRAMP workspaces and affected Enterprise workspaces with a qualifying, approved deferral have a <strong>February 11, 2027</strong> retirement date. Follow the notice for your account or workspace, including any different timeline communicated to you. Migration availability also varies.</p>
+<p>Plugins can bring reusable instructions, reference files, and connected apps together. They provide a way to continue workflows within ChatGPT. Migration still requires testing, and custom Actions need separate integration work.</p>
+<p>See <a href="https://help.openai.com/en/articles/20001519-custom-gpt-retirement-and-migration-faq">OpenAI’s retirement FAQ</a> and <a href="https://learn.chatgpt.com/docs/migrate-custom-gpts">plugin migration guide</a> for the current guidance.</p>
+<p><em>Platform guidance checked November 8, 2026.</em></p>
+<h2>When an end-user assistant becomes a critical workload</h2>
+<p>I think of Custom GPTs—and plugins used this way—as <strong>end-user assistants, or EUAs</strong>. That is my framing for accessible tools that help people apply AI to their work.</p>
+<p>An EUA can become valuable enough that its team starts treating it as infrastructure. People expect consistent answers, reliable access, and someone to call when something goes wrong.</p>
+<p>At that point, I believe the workload deserves a deliberate application strategy. For some teams, a governed workflow inside ChatGPT will fit. For others, the requirements will justify a dedicated AI application with its own deployment and operating model.</p>
+<p>The questions become practical:</p>
+<ul>
+<li><strong>Observability:</strong> Can we trace a request and understand failures, latency, tool use, and cost?</li>
+<li><strong>Continuous evaluations:</strong> Can we measure answer quality and detect regressions when instructions, models, or knowledge change?</li>
+<li><strong>Logging:</strong> Can we investigate problems while protecting sensitive information and enforcing retention policies?</li>
+<li><strong>Security and access:</strong> Can we control who can use the application and which information they can access?</li>
+<li><strong>Production support:</strong> Who owns the service, responds to incidents, and manages recovery?</li>
+<li><strong>Release management:</strong> Can we test a change, deploy it safely, and roll it back?</li>
+</ul>
+<blockquote>
+<p>When a workflow becomes critical, its operating model needs to grow with it.</p>
+</blockquote>
+<p>A dedicated application gives you a place to implement these controls. Your team takes responsibility for building and operating them.</p>
+<h2>Introducing AI App Studio</h2>
+<p><strong>AI App Studio is an experimental, MIT-licensed framework for creating standalone applications powered by OpenAI APIs—from Custom GPT configurations you own or from a fresh set of instructions.</strong></p>
+<p>The idea is to carry forward the useful work: instructions, conversation starters, supported capabilities, and knowledge references. The resulting application provides a familiar chat interface and includes its own source code and launch scripts.</p>
+<p>You can use guided, AI-assisted setup or import configuration in the framework’s supported JSON format. You review the configuration and its dependencies before creating the app.</p>
+<h2>Create a new AI app from instructions, too</h2>
+<p>You can also start with a new idea and write the instructions directly in the studio. Those instructions define the assistant’s role, behavior, tone, and boundaries, creating a <strong>Custom GPT–style chat experience in a standalone application</strong>.</p>
+<p>For example, you could create a meeting-preparation coach with instructions to ask about the audience and objective, suggest an agenda, and help the user anticipate questions.</p>
+<p>Give the app a name, provide the instructions, choose its settings, and review the result. Knowledge files and integrations are optional. The application uses your configured OpenAI API access for live conversations.</p>
+<p>The walkthrough below uses a policy assistant with knowledge files; the same setup flow can create an instructions-only assistant.</p>
+<p><em>The following screenshots show the actual framework and a generated application. They use synthetic company policies and simulated setup, knowledge, and chat providers. They illustrate the workflow and interface, rather than demonstrating live retrieval accuracy.</em></p>
+<h2>Step 1: Configure the application</h2>
+<p>For a migration, start with a GPT you own or are authorized to use. For a new app, define the behavior you want in your own instructions. Provide the app’s name, purpose, full instructions, conversation starters, model choice, and supported capabilities.</p>
+<p>The setup conversation interprets ordinary-language answers and asks for clarification when needed. The full instructions are preserved as entered. You review the resulting configuration before creating the app.</p>
+<p>In this example, I am creating <strong>Policy Navigator</strong>, an assistant for travel and expense questions.</p>
+<p><img src="../../images/01-guided-setup.png" alt="AI App Studio guided setup collecting the purpose and instructions for Policy Navigator."></p>
+<p><em>Figure 1. Guided setup turns owner-provided configuration into a reviewed application draft.</em></p>
+<h2>Step 2: Connect the knowledge files</h2>
+<p>If the GPT relies on documents, select multiple files, upload and index them, and wait until the collection is ready. Then choose <strong>Use these files</strong> to attach it to the application.</p>
+<p>The framework uploads the selected documents to your OpenAI API project, creates a vector store, and checks indexing status before allowing the collection to be bound.</p>
+<p>If the assistant does not need knowledge files, say so during setup.</p>
+<p><img src="../../images/02-knowledge-files.png" alt="Knowledge panel showing Travel policy.txt and Expense FAQ.md indexed and ready to bind."></p>
+<p><em>Figure 2. Two sample policy files are ready. Selecting “Use these files” binds the collection to the app.</em></p>
+<h2>Step 3: Generate and run the standalone app</h2>
+<p>After reviewing the configuration, download the standalone application and extract the complete ZIP.</p>
+<p>The package includes the Python backend, application configuration, chat interface, README, and launch scripts for local Python and Docker. The generated app runs independently; the studio does not need to remain running.</p>
+<p>The chat streams responses, renders Markdown, and saves conversations locally. For an app with knowledge bound, the runtime can use OpenAI’s hosted file search and display returned document citations.</p>
+<p><img src="../../images/03-generated-app.png" alt="Generated Policy Navigator application displaying a sample travel-policy answer with a table, next steps, and document citations."></p>
+<p><em>Figure 3. The generated standalone app displays a simulated answer with formatted text, a table, and document references.</em></p>
+<h2>Which OpenAI APIs are involved?</h2>
+<p>The framework separates setup and knowledge ingestion from the application’s runtime:</p>
+<ul>
+<li><strong>Responses API:</strong> Interprets setup replies and powers the generated app’s conversations and supported tool use.</li>
+<li><strong>Files API:</strong> Uploads the knowledge documents selected in the framework.</li>
+<li><strong>Vector Stores API:</strong> Creates the knowledge collection, indexes uploaded files, and checks readiness before binding.</li>
+</ul>
+<p>The generated app uses <strong>file_search through Responses</strong> to retrieve from a bound collection. It does not upload or re-index those documents at startup. Its API credentials must have access to the project that owns the collection.</p>
+<p>The current implementation does not include the Agents API or Agents SDK. Custom Actions require reviewed backend adapters; their definitions do not automatically become executable integrations.</p>
+<h2>A foundation to strengthen for production</h2>
+<p>AI App Studio is currently a <strong>local, single-user prototype</strong>. It provides configuration migration, compatibility checks, packaging, and a shared runtime.</p>
+<p>Production observability, continuous evaluations, enterprise identity, tenant isolation, operational support, and reliability controls still need to be designed and implemented for the workload.</p>
+<p>Behavioral parity with the original Custom GPT is also not guaranteed. Keep representative prompts and expected results, compare the replacement, and test retrieval, integrations, and difficult cases before relying on it.</p>
+<h2>Explore the studio and help shape what comes next</h2>
+<p>I built AI App Studio to make the path from a useful assistant—or a new set of instructions—to a standalone application easier to explore, and to provide a reusable starting point for the engineering that follows.</p>
+<p>For the architecture, API map, walkthrough, run instructions, and production considerations, visit the <a href="https://ai-app-studio-introduction.peppyshrimp1.chatgpt.site">AI App Studio companion page</a>.</p>
+<p>To try the framework, inspect the code, or contribute, visit <a href="https://github.com/skarlekar/ai-app-studio">AI App Studio on GitHub</a>.</p>
+<p><strong>What signals tell you an end-user assistant has become a critical workload in your organization?</strong></p>
+<p>#AIAppStudio #EnterpriseAI #CustomGPT #AIEngineering #LLMOps #OpenSource</p>
+</article></body></html>

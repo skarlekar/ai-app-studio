@@ -4,6 +4,8 @@ Convert Custom GPT configurations you own into standalone Python chat applicatio
 
 Create an application through AI-assisted setup, or import an owner-provided JSON export. Review compatibility, try the app locally, and download a self-contained application folder or ZIP.
 
+Explore the [AI App Studio companion page](https://ai-app-studio-introduction.peppyshrimp1.chatgpt.site) for the walkthrough and architecture, or read the [illustrated introduction](docs/launch/illustrated-introduction.md).
+
 **Status:** local, single-user prototype. The framework provides configuration migration and a shared runtime. It does not guarantee identical behavior to the original GPT or provide production hosting.
 
 - **Python:** 3.11+; the Docker image includes Python 3.13.

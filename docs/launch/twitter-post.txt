@@ -1,0 +1,6 @@
+Turn Custom GPT configurations—or fresh instructions—into standalone AI apps with AI App Studio, my experimental open-source framework.
+
+See it in action: https://ai-app-studio-introduction.peppyshrimp1.chatgpt.site
+Get the code: https://github.com/skarlekar/ai-app-studio
+
+#AIEngineering #OpenSource

@@ -1,0 +1,13 @@
+A useful AI assistant can quickly become something an entire team depends on. What should happen when that assistant becomes a critical workload?
+
+In this article, I share why I created AI App Studio—an experimental, open-source framework for turning Custom GPT configurations, or a fresh set of instructions, into standalone AI applications with a familiar chat experience.
+
+I explore the journey from end-user assistant to dedicated application, and the engineering needed for production: observability, continuous evaluations, logging, security, and support.
+
+Explore the walkthrough and architecture:
+https://ai-app-studio-introduction.peppyshrimp1.chatgpt.site
+
+Try the framework or contribute:
+https://github.com/skarlekar/ai-app-studio
+
+#AIAppStudio #EnterpriseAI #AIEngineering #LLMOps #OpenSource
