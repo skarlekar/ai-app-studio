@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>App Studio</title>
+<link rel="stylesheet" href="/static/chat.css">
+</head>
+<body>
+<aside aria-label="Workspace sidebar">
+ <div class="brand"><div class="brand-mark" aria-hidden="true"><span class="icon icon-layers"></span></div><div><h1 id="brand-title">App Studio</h1><p id="brand-subtitle">Ideas, made into applications.</p></div></div>
+ <div class="section-heading"><div class="eyebrow">Your applications</div><span class="catalog-count" id="catalog-count">Workspace</span></div>
+ <label for="apps" class="sr-only">Application</label><div class="app-picker"><select id="apps" aria-label="Choose application"></select><span class="icon icon-chevron-down picker-chevron" aria-hidden="true"></span></div>
+ <button id="new"><span class="icon icon-plus" aria-hidden="true"></span><span>New conversation</span></button>
+ <div class="section-heading history-heading"><div class="eyebrow">Recent conversations</div><span class="history-count" aria-hidden="true"></span></div>
+ <nav id="sessions" aria-label="Saved conversations"></nav>
+ <div id="local"><span class="icon icon-lock-keyhole" aria-hidden="true"></span><span>History saved on this device.</span></div>
+</aside>
+<main>
+ <header><div class="header-identity"><div id="header-mark" class="app-mark" aria-hidden="true">✦</div><div><div class="header-eyebrow" id="header-eyebrow">YOUR WORKSPACE</div><div id="name">App Studio</div></div></div><div class="header-tools"><button id="history-toggle" type="button" aria-label="Show conversations" title="Conversations" aria-controls="sessions" aria-expanded="false"><span class="icon icon-history" aria-hidden="true"></span></button><span id="mode">Workspace</span><div id="status" role="status" aria-live="polite" data-state="ready">Ready</div></div></header>
+ <section id="knowledge-panel" class="knowledge-panel" aria-labelledby="knowledge-title" hidden>
+  <div class="knowledge-heading"><div><div class="eyebrow">YOUR KNOWLEDGE</div><h2 id="knowledge-title">Add knowledge files</h2></div><button id="knowledge-close" type="button">Back to chat</button></div>
+  <p id="knowledge-description">Select documents to upload and index in your OpenAI project.</p>
+  <p id="knowledge-guidance" role="status" hidden></p>
+  <div id="knowledge-recent-row" hidden><label for="knowledge-recent">Previously uploaded collections</label><select id="knowledge-recent"><option value="">Choose a collection…</option></select></div>
+  <label for="knowledge-files">Choose knowledge files</label>
+  <input id="knowledge-files" type="file" multiple aria-describedby="knowledge-limits knowledge-retention">
+  <p id="knowledge-limits" class="knowledge-help">Up to 100 files, 25 MiB each, 100 MiB total. PDF, Word, PowerPoint, text, Markdown, JSON, and supported code files.</p>
+  <ul id="knowledge-file-list" aria-label="Selected knowledge files"></ul>
+ </section>
+ <div id="knowledge-controls" class="knowledge-controls" hidden>
+  <p id="knowledge-status" role="status" aria-live="polite">Choose files to begin.</p>
+  <progress id="knowledge-progress" max="100" value="0" aria-label="Knowledge upload and indexing progress" hidden></progress>
+  <p id="knowledge-error" role="alert"></p>
+  <div class="knowledge-actions"><button id="knowledge-upload" type="button">Upload and index</button><button id="knowledge-check" type="button" hidden>Check status</button><button id="knowledge-use" type="button" disabled>Use these files</button></div>
+  <p id="knowledge-retention" class="knowledge-help">Files are sent to OpenAI using your API account. Storage and usage charges may apply. Uploads stay in your OpenAI project if you cancel setup.</p>
+ </div>
+ <div id="messages" aria-live="polite"></div>
+ <footer><div id="setup-controls" class="setup-controls" hidden><div class="setup-nav"><button id="setup-back" type="button">Back</button><button id="setup-cancel" type="button">Cancel setup</button></div><span>AI setup uses your OpenAI API account.</span></div><p id="error" role="alert"></p><form id="form"><div class="composer"><textarea id="input" aria-label="Message" placeholder="Start a conversation…" maxlength="16000" rows="1" required></textarea><button id="send" type="submit" aria-label="Send message"><span>Send</span><span class="icon icon-arrow-up" aria-hidden="true"></span></button></div></form><div id="note"><span><span class="key-hint">⇧ ↵</span>Shift + Enter for a new line</span><span>AI can make mistakes. Check important details.</span></div></footer>
+</main>
+<script src="/static/vendor/marked.umd.js"></script>
+<script src="/static/vendor/purify.min.js"></script>
+<script src="/static/knowledge.js"></script>
+<script src="/static/chat.js"></script>
+</body></html>

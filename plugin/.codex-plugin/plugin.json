@@ -1,0 +1,5 @@
+{
+  "name": "gpt-to-app",
+  "description": "Import owner-provided GPT configurations into standalone OpenAI API applications.",
+  "version": "0.1.0"
+}

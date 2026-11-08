@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gpt-app-framework"
+version = "0.1.0"
+description = "Import owned GPT configurations into standalone OpenAI applications"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+gptapps = "gptapps.cli:main"
+
+[tool.setuptools.package-data]
+gptapps = ["chat.html", "chat.js", "knowledge.js", "chat.css", "LICENSE", "templates/*", "templates/.dockerignore", "vendor/*", "icons/*"]

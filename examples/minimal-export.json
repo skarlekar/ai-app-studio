@@ -1,0 +1,24 @@
+{
+  "gpts": [
+    {
+      "id": "g-example-writing-assistant",
+      "name": "Writing Assistant",
+      "description": "A thoughtful space to shape your ideas into clear, confident writing.",
+      "instructions": "Help the user improve their writing. Ask about their audience and goal when needed. Explain suggested edits clearly.",
+      "conversation_starters": [
+        "Help me make this paragraph clearer.",
+        "Help me outline an article."
+      ],
+      "capabilities": {
+        "items": []
+      },
+      "knowledge": {
+        "files": []
+      },
+      "actions": {
+        "count": 0,
+        "items": []
+      }
+    }
+  ]
+}
