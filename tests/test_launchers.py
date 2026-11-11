@@ -196,7 +196,11 @@ class DockerLauncherTests(unittest.TestCase):
                     process = subprocess.Popen(command, cwd=folder, env=env, stdout=log, stderr=log)
                     try:
                         wait_ready(process, base, logfile, timeout=90, builder=False)
-                        for asset, kind in (("chat.js", "text/javascript"), ("knowledge.js", "text/javascript"), ("chat.css", "text/css"),
+                        with request(base, '/api/config') as response:
+                            info=json.load(response)
+                            expected=json.loads((standalone/'gptapps/build-info.json').read_text())
+                            self.assertEqual({key:info[key] for key in ('version','build')},expected)
+                        for asset, kind in (("chat.js", "text/javascript"), ("attachments.js", "text/javascript"), ("knowledge.js", "text/javascript"), ("chat.css", "text/css"),
                                             ("icons/plus.svg", "image/svg+xml"),
                                             ("vendor/marked.umd.js", "text/javascript"), ("vendor/purify.min.js", "text/javascript")):
                             with request(base, "/static/" + asset) as response:

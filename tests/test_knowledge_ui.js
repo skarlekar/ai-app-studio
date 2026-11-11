@@ -17,3 +17,16 @@ test('clicking upload again while the same collection indexes never creates anot
  await context.uploadKnowledge();
  assert.deepEqual(calls,[]);
 });
+
+test('using ready knowledge clears transient files before advancing to Actions',async()=>{
+ let clears=0;
+ const wizard={step:0,draft:{},history:[]};
+ const context=vm.createContext({busy:false,knowledgeBusy:false,wizard,current:null,
+  steps:[{key:'knowledge_files'},{key:'actions',question:'Actions?'}],
+  clearChatFiles:()=>{clears++;},setInput:()=>{},setupMessage:()=>{},updateChrome:()=>{},
+  $:()=>({focus(){}})});
+ vm.runInContext(source,context);
+ vm.runInContext('knowledgeJob={id:"ready-job",status:"ready",files:[{name:"reference.pdf"}]};',context);
+ await context.useKnowledge();
+ assert.equal(wizard.step,1);assert.equal(clears,1);assert.equal(wizard.draft.knowledge_files[0],'reference.pdf');
+});

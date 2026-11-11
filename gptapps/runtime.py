@@ -12,6 +12,7 @@ import urllib.error
 import urllib.request
 import uuid
 
+from .attachments import validate_attachments, input_content, public_attachments, MAX_TOTAL_BYTES as MAX_ATTACHMENT_BYTES
 from .extensions import Registry
 from .spec import analyze, validate
 
@@ -178,14 +179,20 @@ class Runtime:
     def list_sessions(self, app_id):
         with self.lock, closing(sqlite3.connect(self.db_path)) as db, db:
             rows = db.execute("SELECT id,messages FROM sessions WHERE app_id=? ORDER BY rowid DESC", (app_id,)).fetchall()
-        return [{"id": sid, "title": json.loads(messages)[0]["content"][:70]} for sid, messages in rows]
+        return [{"id": sid, "title": (json.loads(messages)[0]["content"] or
+                    ', '.join(item['name'] for item in json.loads(messages)[0].get('attachments', [])))[:70]}
+                for sid, messages in rows]
 
     def get_session(self, app_id, session_id):
         with self.lock, closing(sqlite3.connect(self.db_path)) as db, db:
             row = db.execute("SELECT messages FROM sessions WHERE id=? AND app_id=?", (session_id, app_id)).fetchone()
         if not row:
             raise ValueError("Conversation not found")
-        return {"id": session_id, "messages": json.loads(row[0])}
+        messages=json.loads(row[0])
+        for message in messages:
+            if message.get('attachments'):
+                message['attachments']=public_attachments(message['attachments'])
+        return {"id": session_id, "messages": messages}
 
     def configuration(self, app):
         validate(app)
@@ -245,8 +252,9 @@ class Runtime:
                     raise ValueError("OpenAI response was incomplete or failed; no conversation turn was saved")
         raise ValueError("OpenAI stream ended before completion; no conversation turn was saved")
 
-    def chat(self, app, message, session_id=None, emit=None):
-        if not isinstance(message, str) or not message.strip() or len(message) > 16000:
+    def chat(self, app, message, session_id=None, emit=None, attachments=None):
+        files=validate_attachments(attachments)
+        if not isinstance(message, str) or (not message.strip() and not files) or len(message) > 16000:
             raise ValueError("Message must contain 1–16000 characters")
         model, tools, allowed = self.configuration(app)
         fingerprint = hashlib.sha256((json.dumps(app, sort_keys=True) + model).encode()).hexdigest()
@@ -262,9 +270,12 @@ class Runtime:
                 history = json.loads(row[2])
             if len(history) >= 80 or sum(len(m["content"]) for m in history) + len(message) > 160000:
                 raise ValueError("Conversation limit reached; start a new conversation")
-            # Only the application developer config becomes instructions; user text remains user input.
-            working = [{"role": m["role"], "content": m["content"]} for m in history]
-            working.append({"role": "user", "content": message})
+            attachment_bytes=sum(item['size'] for m in history for item in m.get('attachments',[]))
+            if attachment_bytes+sum(item['size'] for item in files)>MAX_ATTACHMENT_BYTES:
+                raise ValueError('Conversation attachment limit reached (20 MiB); start a new conversation')
+            # Only the application developer config becomes instructions; user text/files remain user input.
+            working = [{"role": m["role"], "content": input_content(m["content"],m.get('attachments',[]))} for m in history]
+            working.append({"role": "user", "content": input_content(message,files)})
             assets, citations, usage = [], [], []
             for round_number in range(app["runtime"]["max_tool_rounds"] + 1):
                 payload = {"model": model, "instructions": app["instructions"], "input": working,
@@ -329,7 +340,10 @@ class Runtime:
                                  "assets": assets, "citations": citations}
                     if length_limited:
                         assistant["incomplete_reason"] = "max_output_tokens"
-                    history.extend([{"role": "user", "content": message}, assistant])
+                    user={"role": "user", "content": message}
+                    if files:
+                        user['attachments']=files
+                    history.extend([user, assistant])
                     with closing(sqlite3.connect(self.db_path)) as db, db:
                         db.execute("INSERT OR REPLACE INTO sessions VALUES (?,?,?,?)", (session_id, app["id"], fingerprint, json.dumps(history)))
                     return {"session_id": session_id, "message": assistant, "usage": usage}

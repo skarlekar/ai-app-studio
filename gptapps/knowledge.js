@@ -112,6 +112,7 @@ async function useKnowledge(){
  if(knowledgeBusy||busy||knowledgeJob?.status!=='ready')return;
  const job=knowledgeJob;
  if(wizard&&steps[wizard.step]?.key==='knowledge_files'){
+  clearChatFiles();setInput('');
   wizard.draft.knowledge_upload_id=job.id;wizard.draft.knowledge_files=job.files.map(file=>file.name);wizard.history=[];
   setupMessage('All '+job.files.length+' knowledge files are indexed and will be attached to your application.');
   wizard.step++;updateChrome();setupMessage(steps[wizard.step].question);$('input').focus();return;

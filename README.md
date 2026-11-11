@@ -412,6 +412,8 @@ Rebuild or re-download apps created before these launchers were added to receive
 flowchart TD
     Owner[Owner-provided GPT configuration] --> Chat[Web setup chat]
     Owner --> Export[Supported JSON export]
+    Context[Chat picker or dropped files] --> ChatFiles[Validate current-step attachment context]
+    ChatFiles --> Chat
     Chat --> Interpreter[Server-side AI interpreter<br/>Responses API + Structured Outputs]
     Interpreter --> Validation[Type and configuration validation]
     Chat --> Verbatim[Verbatim instructions / direct Action JSON]
@@ -439,7 +441,7 @@ flowchart TD
     Report --> Package
 ```
 
-The AI interpreter has no file, Action, or execution tools. It returns a proposed value for the current step or a clarification/navigation intent. The separate uploader forwards explicitly selected files using the server's API key, creates a vector store and batch, and checks indexing status. **Use these files** attaches only a ready collection to the reviewed draft; **Use files for this app** updates an existing app's knowledge binding. An indexing failure leaves an existing binding unchanged.
+The AI interpreter has no file-system, Action, or execution tools; explicitly attached documents are available as input content. It returns a proposed value for the current step or a clarification/navigation intent. The separate uploader forwards explicitly selected files using the server's API key, creates a vector store and batch, and checks indexing status. **Use these files** attaches only a ready collection to the reviewed draft; **Use files for this app** updates an existing app's knowledge binding. An indexing failure leaves an existing binding unchanged.
 
 Server validation runs before accepting settings; the final user instruction triggers app creation. Setup interpretation does not persist its own server conversation. Upload metadata persists locally for recovery, while document contents and the indexed vector store live in the OpenAI project. The ZIP includes the vector store ID and filenames, with no source documents, per-file upload metadata, upload-state files, or local conversation database. Packaging uses a runtime-file allowlist even if a custom data directory is nested under the source package.
 
@@ -447,12 +449,13 @@ Server validation runs before accepting settings; the final user instruction tri
 
 ```mermaid
 flowchart LR
-    Browser[App chat UI] --> HTTP[Local Python HTTP server]
+    Browser[App chat UI: text, picker, drag/drop] --> Intake[Bounded attachment validation]
+    Intake --> HTTP[Local Python HTTP server]
     HTTP --> Runtime[Shared app runtime]
     Manifest[(app.json<br/>Instructions, model, tools, vector store IDs)] --> Runtime
     Environment[Server environment<br/>OpenAI API key] --> Runtime
     Runtime <--> SQLite[(Local SQLite conversations)]
-    Runtime --> Responses[OpenAI Responses API]
+    Runtime -->|Text plus inline file/image inputs| Responses[OpenAI Responses API]
     Responses -->|If knowledge is bound| FileSearch[Hosted file_search tool]
     FileSearch <--> Knowledge[(OpenAI vector store<br/>Prepared by the framework)]
     FileSearch --> Responses
@@ -467,9 +470,24 @@ flowchart LR
     HTTP --> Browser
 ```
 
-Each saved conversation is bound to its app ID and a configuration/model fingerprint. A changed configuration or model requires a new conversation. Previous user and assistant text is replayed to the API with `store: false`.
+Each saved conversation is bound to its app ID and a configuration/model fingerprint. A changed configuration or model requires a new conversation. Previous user and assistant text, plus saved chat attachments, are replayed to the API with `store: false`. Chat attachment bytes remain in local private SQLite history; session UI responses expose names, MIME types and sizes only.
 
-The generated app is self-contained: it reads the saved manifest and does not need the framework running. When knowledge is bound, its Responses request declares `file_search` with `bindings.vector_store_ids`. OpenAI handles retrieval from the already indexed documents and returns answer text and file citations. The generated app does not upload documents, create vector stores, run the setup interpreter, or call the Agents API. Use an API key with access to the same OpenAI project that owns the store; copying the ZIP to another machine does not copy or transfer the hosted knowledge.
+The generated app is self-contained: it reads the saved manifest and does not need the framework running. When knowledge is bound, its Responses request declares `file_search` with `bindings.vector_store_ids`. OpenAI handles retrieval from the already indexed documents and returns answer text and file citations. Chat attachments go directly in the Responses request without creating hosted Files resources. The generated app does not upload permanent knowledge documents, create vector stores, run the setup interpreter, or call the Agents API. Use an API key with access to the same OpenAI project that owns the store; copying the ZIP to another machine does not copy or transfer the hosted knowledge.
+
+## Attach files to chat
+
+In both the public framework and every newly generated app, click **Attach files** next to the message box or **drag files into the chat**. Review the filename/size chips, remove anything you do not want to send, add a question, then click Send. Sending files without typed text is supported. Files stay in your browser until Send; failed requests keep the draft and files ready to retry. Switching conversations/apps or starting a new conversation clears unsent files.
+
+- **Limits:** 5 files per message, 10 MiB per file, 20 MiB combined per message and conversation. Start a new conversation after reaching the cumulative limit. Invalid, empty or unsupported files are rejected before a model call.
+- **Formats:** PDF; Word (`.doc`, `.docx`, `.rtf`, `.odt`); PowerPoint; Excel; text, Markdown, JSON, CSV, TSV, XML, HTML and supported source code; PNG, JPEG and WebP images. Archives, audio, video and executable binaries are unsupported. The file picker lists the accepted extensions.
+- **Model access:** the configured model must accept the selected input types. PDF/image processing requires a vision-capable model. Non-PDF documents pass extracted text; embedded images/charts are not included. Spreadsheet processing may summarize/sample rows rather than include an entire workbook. See [OpenAI file-input documentation](https://developers.openai.com/api/docs/guides/file-inputs).
+- **Data and cost:** the backend sends your typed text and inline `input_file` / `input_image` parts together to `POST /v1/responses`. This path creates no hosted File, vector store, or permanent knowledge binding. Accepted attachments are stored in private local SQLite conversation history for follow-ups and resent on each turn, increasing context usage and API cost. History is not encrypted at rest. Keep the data folder private. Display/history endpoints expose attachment metadata, never base64 bytes; app exports exclude conversation data.
+- **Conversational setup:** attach documents as context for the current setup question. Clarification keeps the selected files queued for your next answer; advancing clears them. For the Instructions step, attach UTF-8 text/Markdown/code so its text can be preserved exactly, alongside any typed instructions. PDF/Word/image instructions must first be exported to text or pasted; the framework does not silently rewrite those instructions with AI. For Actions, attach an actual JSON array of complete definitions. The permanent-knowledge step uses its dedicated file picker/index controls, so chat attachments are disabled there. Review/creation requires an explicit typed confirmation without attachments. Attachments at a setup step do not automatically fill other steps.
+- **Permanent knowledge:** use the separate **Knowledge files** upload/index panel when every user of the created app needs a searchable knowledge collection. Attaching a file to chat does not index it or bind it to the generated app.
+
+Both chat paths use the server's existing `OPENAI_API_KEY`: regular chat uses the app's model/default `OPENAI_MODEL`; AI setup uses `OPENAI_SETUP_MODEL` (falling back to `OPENAI_MODEL`). No additional API credentials are needed. Existing downloaded apps need a **fresh standalone export** to receive the new UI and runtime.
+
+Version **0.1.1** adds this feature to the public framework. The footer shows its version and build number. Source runs use a stable numeric source fingerprint; each standalone build receives a new immutable build number. Restarting an exported build retains its number. Release versions are maintained in `gptapps/version.py`.
 
 ## OpenAI APIs and tools
 
@@ -483,6 +501,7 @@ Chat and setup inference use **`POST https://api.openai.com/v1/responses`**. The
 | Framework: knowledge indexing | Vector Stores API `POST /v1/vector_stores/{id}/file_batches` | Indexes the uploaded file IDs together |
 | Framework: indexing progress | Vector Stores API `GET /v1/vector_stores/{id}/file_batches/{batch_id}` | Checks completion and failed/cancelled counts before binding |
 | Converted app: chat | Responses API, with `stream: true` for the web chat | Each app conversation turn |
+| Framework and converted app: chat attachments | Responses inline `input_file` and `input_image` content | Explicitly selected/dropped files sent with a message; no Files/Vector Stores call |
 | Converted app: structured output | Responses `text.format` with the configured object JSON Schema | If `runtime.output_schema` is set |
 | Converted app: web search | Responses hosted `web_search` tool | If enabled in `runtime.hosted_tools` |
 | Converted app: image generation | Responses hosted `image_generation` tool | If enabled; returned images are saved locally |
@@ -702,7 +721,7 @@ Tests use fake providers, temporary app catalogs, and isolated history. They cov
 Streaming tests also verify that text arrives before provider completion, interrupted/disconnected turns are not committed, function-call rounds still work, and SSE parsing preserves UTF-8. Optional browser-stream decoder tests use Node's built-in test runner without npm dependencies:
 
 ```sh
-node --test tests/test_chat_stream.js tests/test_knowledge_ui.js
+node --test tests/test_chat_stream.js tests/test_knowledge_ui.js tests/test_chat_attachments.js
 ```
 
 To also build and test the real Docker image, start Docker and run:

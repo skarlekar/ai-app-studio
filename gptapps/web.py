@@ -8,9 +8,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from .attachments import MAX_REQUEST_BYTES, MAX_FILES as CHAT_MAX_FILES, MAX_FILE_BYTES as CHAT_MAX_FILE_BYTES, MAX_TOTAL_BYTES as CHAT_MAX_TOTAL_BYTES, EXTENSIONS as CHAT_EXTENSIONS
 from .spec import analyze, load, from_chat_input
 from .runtime import Runtime
 from .build import build_app
+from .version import build_info
 from .setup import SetupInterpreter
 from .knowledge import KnowledgeManager, MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES, EXTENSIONS
 
@@ -32,7 +34,8 @@ def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="12
     setup = SetupInterpreter(client=runtime.client) if builder else None
     knowledge = KnowledgeManager(data_dir) if builder else None
     html = Path(__file__).with_name("chat.html").read_bytes()
-    static = {"/static/chat.js": Path(__file__).with_name("chat.js"),
+    static = {"/static/attachments.js": Path(__file__).with_name("attachments.js"),
+              "/static/chat.js": Path(__file__).with_name("chat.js"),
               "/static/knowledge.js": Path(__file__).with_name("knowledge.js"),
               "/static/chat.css": Path(__file__).with_name("chat.css"),
               "/static/vendor/marked.umd.js": Path(__file__).with_name("vendor") / "marked.umd.js",
@@ -80,7 +83,8 @@ def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="12
                 return self.send(200, [{"id": a["id"], "name": a["name"], "description": a["description"],
                     "starters": a["conversation_starters"], "report": analyze(a)} for a in apps.values()])
             if url.path == "/api/config":
-                config = {"builder_enabled": builder}
+                config = {"builder_enabled": builder, **build_info(), "chat_attachments": {"max_files": CHAT_MAX_FILES,
+                    "max_file_bytes": CHAT_MAX_FILE_BYTES,"max_total_bytes": CHAT_MAX_TOTAL_BYTES,"extensions": CHAT_EXTENSIONS}}
                 if builder:
                     config["knowledge_uploads"] = {"max_files": MAX_FILES, "max_file_bytes": MAX_FILE_BYTES,
                                                    "max_total_bytes": MAX_TOTAL_BYTES, "extensions": EXTENSIONS}
@@ -161,7 +165,7 @@ def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="12
 
             try:
                 length = int(self.headers.get("Content-Length", "0"))
-                if not 0 < length <= (MAX_FILE_BYTES if binary else 1500000):
+                if not 0 < length <= (MAX_FILE_BYTES if binary else MAX_REQUEST_BYTES if path in ("/api/chat","/api/setup") else 1500000):
                     raise ValueError("Invalid request size")
                 raw = self.rfile.read(length)
                 if len(raw) != length:
@@ -205,7 +209,7 @@ def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="12
                         return self.send(403, {"error": "Application setup is disabled in this standalone app"})
                     if not isinstance(body, dict):
                         raise ValueError("Setup request must be an object")
-                    return self.send(200, setup.interpret(body.get("field"), body.get("message"), body.get("history")))
+                    return self.send(200, setup.interpret(body.get("field"), body.get("message"), body.get("history"), attachments=body.get("attachments")))
                 if path == "/api/apps":
                     if not builder:
                         return self.send(403, {"error": "Application setup is disabled in this standalone app"})
@@ -231,10 +235,10 @@ def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="12
                 if type(body.get("stream", False)) is not bool:
                     raise ValueError("stream must be a boolean")
                 if body.get("stream"):
-                    result = runtime.chat(apps[body["app_id"]], body.get("message"), sid, emit=event)
+                    result = runtime.chat(apps[body["app_id"]], body.get("message"), sid, emit=event, attachments=body.get("attachments"))
                     event({"type": "done", **result})
                 else:
-                    result = runtime.chat(apps[body["app_id"]], body.get("message"), sid)
+                    result = runtime.chat(apps[body["app_id"]], body.get("message"), sid, attachments=body.get("attachments"))
                     self.send(200, result)
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 pass  # A disconnected client must not trigger a second response or keep its model stream open.

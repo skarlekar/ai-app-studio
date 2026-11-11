@@ -9,6 +9,8 @@ gptapps/**
 !gptapps/chat.html
 !gptapps/chat.js
 !gptapps/knowledge.js
+!gptapps/attachments.js
+!gptapps/build-info.json
 !gptapps/chat.css
 !gptapps/icons/
 gptapps/icons/**

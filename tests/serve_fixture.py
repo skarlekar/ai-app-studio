@@ -7,16 +7,23 @@ import time
 import os
 import uuid
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, os.environ.get('GPTAPPS_FIXTURE_RUNTIME_ROOT',str(Path(__file__).resolve().parents[1])))
 from gptapps.runtime import Runtime
 from gptapps.knowledge import KnowledgeManager
 import gptapps.web as web
 
 
+def input_text(content):
+    if isinstance(content,str):return content
+    return '\n'.join(part['text'] for part in content if part.get('type')=='input_text')
+
+
 class FakeClient:
     def create(self, payload):
+        capture=os.environ.get('GPTAPPS_CAPTURE_REQUESTS')
+        if capture:Path(capture).write_text(json.dumps(payload))
         if payload.get("text", {}).get("format", {}).get("name") == "setup_reply":
-            context = json.loads(payload["input"][0]["content"])
+            context = json.loads(input_text(payload["input"][0]["content"]))
             field, reply = context["field"], context["reply"]
             if reply == "slow-setup":
                 time.sleep(1)
@@ -45,10 +52,14 @@ class FakeClient:
                 status, value, message = "create", None, "Creating your application."
             return {"status": "completed", "output": [{"type": "message", "content": [
                 {"type": "output_text", "text": json.dumps({"status": status, "value": value, "message": message})}]}]}
-        text = payload["input"][-1]["content"]
+        text = input_text(payload["input"][-1]["content"])
         if text == "fail":
             return {"status": "incomplete", "output": []}
         answer = "Test provider response: " + text
+        content=payload['input'][-1]['content']
+        if isinstance(content,list):
+            filenames=[part['filename'] for part in content if part.get('type')=='input_file']
+            if filenames:answer+='\n\n**Offline attachment check:** '+', '.join(filenames)+' received together with your message.'
         if text in ("markdown", "slow-markdown"):
             answer = """Here are some **basic Spanish greetings** for travel:
 
@@ -90,7 +101,7 @@ print("¡Hola!")
              "annotations": [{"type": "url_citation", "title": "Example source", "url": "https://example.com"}]}]}]}
 
     def stream(self, payload):
-        text = payload["input"][-1]["content"]
+        text = input_text(payload["input"][-1]["content"])
         if text == "stream-fail":
             yield {"type": "response.output_text.delta", "delta": "Partial response", "output_index": 0, "content_index": 0}
             raise ValueError("Test streaming response was incomplete; no conversation turn was saved")
