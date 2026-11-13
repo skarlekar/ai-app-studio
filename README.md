@@ -14,6 +14,7 @@ Explore the [AI App Studio companion page](https://ai-app-studio-introduction.pe
 
 ## Contents
 
+- [Release notes](#release-notes)
 - [What it does](#what-it-does)
 - [Quick start](#quick-start)
 - [Run with Docker](#run-with-docker)
@@ -33,6 +34,23 @@ Explore the [AI App Studio companion page](https://ai-app-studio-introduction.pe
 - [Project layout](#project-layout)
 - [Contributing](#contributing)
 - [License](#license)
+
+## Release notes
+
+### 0.1.2 — 2026-11-13 (latest)
+
+- **Bottom-left version and build label:** the framework and generated standalone apps keep their release identifier visible at the bottom-left corner. Desktop placement sits below the sidebar history notice; mobile placement reserves space beneath the chat controls.
+- **Release documentation:** this README now records release highlights and upgrade instructions.
+
+### 0.1.1 — 2026-11-11
+
+- **Chat attachments:** select multiple files or drag them into chat, review/remove the selected files, and send their contents together with your typed message. File-only messages also work. The shared UI and runtime include this feature in newly generated standalone apps.
+- **Supported inputs and limits:** documents, spreadsheets, text/code, and PNG/JPEG/WebP images; up to 5 files per message, 10 MiB each, and 20 MiB combined per message and conversation. The configured model must support the chosen input types. See [Attach files to chat](#attach-files-to-chat) for formats, setup behavior, and provider limitations.
+- **Follow-ups and recovery:** accepted files stay with local conversation history and are replayed on follow-up turns. Interrupted or failed requests retain the draft and selected files for retry. Chat attachments remain separate from permanent knowledge collections.
+- **Setup protection:** UTF-8 instruction files preserve their supplied text, and Action JSON keeps supplied definitions rather than inventing schemas. Transient attachments cannot carry over from the permanent-knowledge step into Actions.
+- **Build identification and packaging:** added version/build labels, immutable standalone build numbers, and attachment assets in Python/Docker packages. Package discovery explicitly excludes unrelated local directories.
+
+**Upgrade:** run `git pull --ff-only` in your framework checkout, then restart `./start.sh` or rebuild/restart with `./docker-start.sh` and refresh the browser. **Download a fresh standalone export for existing generated apps** to receive the latest UI/runtime. Keep your existing app configuration, API settings, and private data directory. A framework update does not modify previously downloaded app folders.
 
 ## What it does
 
@@ -487,7 +505,7 @@ In both the public framework and every newly generated app, click **Attach files
 
 Both chat paths use the server's existing `OPENAI_API_KEY`: regular chat uses the app's model/default `OPENAI_MODEL`; AI setup uses `OPENAI_SETUP_MODEL` (falling back to `OPENAI_MODEL`). No additional API credentials are needed. Existing downloaded apps need a **fresh standalone export** to receive the new UI and runtime.
 
-Version **0.1.1** adds this feature to the public framework. The footer shows its version and build number. Source runs use a stable numeric source fingerprint; each standalone build receives a new immutable build number. Restarting an exported build retains its number. Release versions are maintained in `gptapps/version.py`.
+Version **0.1.1** adds this feature to the public framework. The bottom-left label shows the installed version and build number. Source runs use a stable numeric source fingerprint; each standalone build receives a new immutable build number. Restarting an exported build retains its number. Release versions are maintained in `gptapps/version.py`.
 
 ## OpenAI APIs and tools
 

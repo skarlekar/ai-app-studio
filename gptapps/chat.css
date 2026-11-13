@@ -1414,4 +1414,8 @@ main:has(.knowledge-manage:not([hidden])) .knowledge-controls { margin-bottom: 2
 .message-files li{border:1px solid #b9cbb0;border-radius:10px;padding:8px 12px;font-size:13px;overflow-wrap:anywhere;}
 @media(max-width:600px){.chat-file-name{max-width:150px;}#chat-attach{width:36px;flex-basis:36px;}.composer{gap:6px;}#note{flex-wrap:wrap;}}
 
-#release-info{display:block;text-align:center;font-size:11px;line-height:1.7;color:#53664e;padding-top:7px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums;}
+/* Keep release identity at the viewport's bottom left, clear of chat controls. */
+#release-info{position:fixed;left:20px;bottom:8px;z-index:3;display:block;width:238px;max-width:calc(100vw - 40px);text-align:left;font-size:11px;line-height:1.7;color:#b6ccbd;overflow-wrap:anywhere;font-variant-numeric:tabular-nums;}
+@media(min-width:701px){aside{padding-bottom:50px;}}
+@media(min-width:701px) and (max-width:1100px){#release-info{left:16px;width:206px;}}
+@media(max-width:700px){#release-info{left:14px;bottom:8px;width:auto;max-width:calc(100vw - 28px);color:#53664e;background:var(--paper);padding:0 2px;}footer{padding-bottom:38px;}}

@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import time
 
-VERSION = '0.1.1'
+VERSION = '0.1.2'
 
 
 def build_info():
