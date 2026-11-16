@@ -76,3 +76,56 @@ class RouterDockerTests(unittest.TestCase):
      wait_ready(process,base,logfile,timeout=90,builder=False)
      with request(base,'/static/routing.js') as response:self.assertIn(b'routingShow',response.read())
     finally:stop(process)
+
+class RouterLauncherPolicyTests(unittest.TestCase):
+ def test_local_launcher_defaults_from_repo_root_and_honors_explicit_and_environment_overrides(self):
+  with tempfile.TemporaryDirectory() as folder:
+   root=Path(folder);environment=root/'environment policy.json';explicit=root/'explicit policy.json'
+   environment.write_text(json.dumps({**policy(),'version':'environment-v1'}))
+   explicit.write_text(json.dumps({**policy(),'version':'explicit-v1'}))
+   scenarios=[('default',[],None,'2026-11-15-starter-v1','gpt-6-sol'),
+              ('environment',[],environment,'environment-v1','test-balanced'),
+              ('explicit',['--routing-policy',str(explicit)],environment,'explicit-v1','test-balanced')]
+   for label,args,env_policy,version,fallback in scenarios:
+    with self.subTest(label=label):
+     port=unused_port();base=f'http://127.0.0.1:{port}';logfile=root/(label+'.log')
+     env={k:v for k,v in os.environ.items() if k!='OPENAI_ROUTING_POLICY_FILE'}
+     env.update(OPENAI_API_KEY='test-only-not-a-real-key',OPENAI_MODEL='test-model',OPENAI_SETUP_MODEL='test-model',GPTAPPS_PYTHON=sys.executable)
+     if env_policy:env['OPENAI_ROUTING_POLICY_FILE']=str(env_policy)
+     with logfile.open('w') as log:
+      process=subprocess.Popen(['bash',str(ROOT/'start.sh'),'--port',str(port),'--apps',str(root/label/'apps'),'--data',str(root/label/'data'),'--no-browser',*args],cwd=root,env=env,stdout=log,stderr=log)
+      try:
+       wait_ready(process,base,logfile)
+       with request(base,'/api/config') as response:self.assertTrue(json.load(response)['routing_available'])
+       with request(base,'/api/setup',{'field':'model','message':'auto'}) as response:self.assertEqual(json.load(response)['value'],'auto')
+       with request(base,'/api/apps',{'name':'Auto starter','instructions':'Help','model':'auto'}) as response:aid=json.load(response)['id']
+       with request(base,'/api/spec?app='+aid) as response:
+        snapshot=json.load(response)['runtime']['routing']
+        self.assertEqual(snapshot['version'],version);self.assertEqual(snapshot['fallback_model'],fallback)
+      finally:stop(process)
+ def test_unreadable_policy_override_fails_instead_of_using_default(self):
+  with tempfile.TemporaryDirectory() as folder:
+   for script in ('start.sh','docker-start.sh'):
+    result=subprocess.run(['bash',str(ROOT/script),'--routing-policy',str(Path(folder)/'missing.json'),'--no-browser'],cwd=folder,capture_output=True,text=True)
+    self.assertNotEqual(result.returncode,0)
+    self.assertIn('Routing policy must be a readable JSON file',result.stderr)
+
+@unittest.skipUnless(os.environ.get('GPTAPPS_TEST_DOCKER')=='1','Set GPTAPPS_TEST_DOCKER=1 for routing Docker verification')
+class RouterDefaultDockerPolicyTests(unittest.TestCase):
+ def test_docker_launcher_enables_auto_with_bundled_policy_without_a_flag(self):
+  with tempfile.TemporaryDirectory() as folder:
+   root=Path(folder);port=unused_port();base=f'http://127.0.0.1:{port}';logfile=root/'default-docker.log'
+   env={k:v for k,v in os.environ.items() if k!='OPENAI_ROUTING_POLICY_FILE'}
+   env.update(OPENAI_API_KEY='test-only-not-a-real-key',OPENAI_MODEL='test-model',OPENAI_SETUP_MODEL='test-model',GPTAPPS_CONTAINER_NAME=f'gpt-default-policy-{port}',GPTAPPS_DOCKER_IMAGE='gpt-default-policy:test')
+   with logfile.open('w') as log:
+    process=subprocess.Popen(['bash',str(ROOT/'docker-start.sh'),'--apps',str(root/'apps'),'--data',str(root/'data'),'--port',str(port),'--no-browser'],cwd=root,env=env,stdout=log,stderr=log)
+    try:
+     wait_ready(process,base,logfile,timeout=90)
+     with request(base,'/api/config') as response:self.assertTrue(json.load(response)['routing_available'])
+     with request(base,'/api/setup',{'field':'model','message':'auto'}) as response:self.assertEqual(json.load(response)['value'],'auto')
+     with request(base,'/api/apps',{'name':'Docker default','instructions':'Help','model':'auto'}) as response:aid=json.load(response)['id']
+     with request(base,'/api/spec?app='+aid) as response:
+      runtime=json.load(response)['runtime'];self.assertIsNone(runtime['model'])
+      self.assertEqual(runtime['routing']['version'],'2026-11-15-starter-v1')
+      self.assertEqual(runtime['routing']['fallback_model'],'gpt-6-sol')
+    finally:stop(process)

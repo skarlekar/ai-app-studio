@@ -4,6 +4,7 @@ launcher_options() {
   PORT="${GPTAPPS_PORT:-8765}"
   APPS_DIR="${GPTAPPS_APPS_DIR:-$FRAMEWORK_ROOT/apps}"
   DATA_DIR="${GPTAPPS_DATA_DIR:-$FRAMEWORK_ROOT/.gptapps-data}"
+  OPENAI_ROUTING_POLICY_FILE="${OPENAI_ROUTING_POLICY_FILE:-$FRAMEWORK_ROOT/routing-policy.json}"
   OPEN_BROWSER=1
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -20,6 +21,7 @@ launcher_options() {
       -h|--help)
         echo "Usage: $0 [--port PORT] [--apps DIRECTORY] [--data DIRECTORY] [--routing-policy FILE] [--no-browser]"
         echo "Starts the builder at http://127.0.0.1:PORT. Press Ctrl+C to stop."
+        echo "Routing policy: bundled routing-policy.json by default; --routing-policy FILE overrides the environment/default."
         exit 0 ;;
       *) echo "Unknown option: $1. Use --help." >&2; exit 1 ;;
     esac

@@ -39,7 +39,13 @@ Explore the [AI App Studio companion page](https://ai-app-studio-introduction.pe
 
 ## Release notes
 
-### 0.2.0 — 2026-11-15 (latest)
+### 0.2.1 — 2026-11-15 (latest)
+
+- **Auto routing ready at startup:** `./start.sh` and `./docker-start.sh` load the bundled `routing-policy.json` by default, so selecting Auto no longer requires an extra launch option.
+- **Configurable policy:** use `--routing-policy FILE` to override the starter; an existing `OPENAI_ROUTING_POLICY_FILE` environment setting is also honored. Explicit flag > nonempty environment > bundled starter. Docker mounts the selected host file read-only.
+- **Starter model pool:** economy Luna, balanced/fallback Sol, advanced Astra. Review model/tool access and workload quality/cost before live use. Existing saved applications keep their configured model/policy snapshots; Auto remains an explicit app-owner choice.
+
+### 0.2.0 — 2026-11-15
 
 - **Optional Auto — cost-first routing:** choose an approved answer model for each app-chat turn from an operator-reviewed policy. Existing apps keep their fixed-model behavior. The setup interpreter still uses its configured setup model.
 - **Attachment-aware selection:** classify bounded conversation/app text, attachment metadata and available UTF-8 excerpts with Decisions; stream the answer and tools through Responses with the original full inputs. Binary documents and images supply metadata only to the routing pass.
@@ -150,9 +156,11 @@ The guided setup also provides Back and Cancel setup buttons near the composer. 
 ./start.sh --port 9000
 ./start.sh --apps migrated/apps
 ./start.sh --apps apps --data .gptapps-data --no-browser
-./start.sh --routing-policy examples/routing-policy.example.json
+./start.sh --routing-policy /path/to/custom-policy.json
 ./start.sh --help
 ```
+
+Both framework launchers use the bundled [routing-policy.json](routing-policy.json) automatically. Supply `--routing-policy FILE` only to choose another policy file; a nonempty `OPENAI_ROUTING_POLICY_FILE` environment setting also overrides the bundled default. The explicit flag takes precedence over that environment setting. The bundled path resolves from the framework root even when launching from another directory.
 
 The default catalog is `apps/`. Use `--apps migrated/apps` to open configurations created by earlier versions of the framework. Relative directory options are resolved from the framework root, even if you launch the script from another directory. An occupied port produces an error; the launcher does not stop another process.
 
@@ -169,9 +177,23 @@ The Docker launcher prompts for missing settings, builds the image, starts the b
 ```sh
 ./docker-start.sh --port 9000
 ./docker-start.sh --apps migrated/apps --no-browser
-./docker-start.sh --routing-policy examples/routing-policy.example.json
+./docker-start.sh --routing-policy /path/to/custom-policy.json
 ./docker-start.sh --help
 ```
+
+### Default routing policy in Docker
+
+A starter [routing-policy.json](routing-policy.json) is included in the repository. It uses Luna for economy, Sol for balanced/fallback, and Astra for advanced requests, with the same example capability declarations as the documented policy. Review model/tool access in your OpenAI project and adjust the candidates before live use; policy validation does not check account access or measure savings.
+
+After updating from 0.2.0, stop the current Docker launcher with **Ctrl+C**, then restart from the repository folder. The starter policy is now loaded without a flag:
+
+```sh
+./docker-start.sh
+```
+
+The launcher mounts the selected host policy read-only at `/config/routing-policy.json` and sets `OPENAI_ROUTING_POLICY_FILE` **inside the container**. No manual container editing or environment export is needed. To use another file, run `./docker-start.sh --routing-policy /path/to/custom-policy.json`. The same default/override behavior applies to `./start.sh`. Selecting Auto is still a separate choice during app setup; starting with the policy does not change fixed-mode apps.
+
+Keep the browser tab open to retain an unfinished setup draft; after the server restarts on the same port, type `auto` and send again. The Auto button's availability is loaded when the page opens, so it may remain disabled in an already-open tab; a page reload updates it but discards an unfinished draft. For a new setup, select **Auto — cost-first** at the model step. Existing apps retain their previously saved model/policy snapshots.
 
 | Component | Location |
 | --- | --- |
@@ -180,7 +202,7 @@ The Docker launcher prompts for missing settings, builds the image, starts the b
 | Application manifests | Host `apps/` mounted at `/data/apps` |
 | Conversations and generated images | Host `.gptapps-data/` mounted at `/data/runtime` |
 | API credentials | Passed from the launcher's environment; excluded from image builds |
-| Optional routing policy | Operator-selected host JSON mounted read-only at `/config/routing-policy.json` |
+| Routing policy | Bundled `routing-policy.json` (or operator override), mounted read-only at `/config/routing-policy.json` |
 | Browser access | Host `127.0.0.1:PORT`, published to the same container port |
 
 App configurations and history survive container removal because they are bind-mounted from the host. The launcher runs the container with your host user/group IDs to keep these files usable outside Docker. The image itself defaults to a non-root numeric user. `GPTAPPS_DOCKER_IMAGE` and `GPTAPPS_CONTAINER_NAME` can override the default image tag and container name.
@@ -196,8 +218,10 @@ docker run --rm --init \
   --user "$(id -u):$(id -g)" \
   -p 127.0.0.1:8765:8765 \
   -e OPENAI_API_KEY -e OPENAI_MODEL -e OPENAI_SETUP_MODEL \
+  -e OPENAI_ROUTING_POLICY_FILE=/config/routing-policy.json \
   -v "$PWD/apps:/data/apps" \
   -v "$PWD/.gptapps-data:/data/runtime" \
+  -v "$PWD/routing-policy.json:/config/routing-policy.json:ro" \
   gpt-app-framework:local
 ```
 
@@ -210,7 +234,7 @@ The Docker build copies only the runtime source, public example, entrypoint, and
 | `OPENAI_API_KEY` | Server-side OpenAI project key | Required for live AI requests |
 | `OPENAI_MODEL` | Default model for fixed apps; fallback model for setup | No hardcoded model |
 | `OPENAI_SETUP_MODEL` | Separate model for interpreting setup replies; must support Structured Outputs | `OPENAI_MODEL` |
-| `OPENAI_ROUTING_POLICY_FILE` | Reviewed JSON policy to offer Auto during creation; `--routing-policy FILE` sets it | Unset; fixed mode remains available |
+| `OPENAI_ROUTING_POLICY_FILE` | JSON policy offered for Auto creation; `--routing-policy FILE` overrides this setting | Launchers: `routing-policy.json` under the framework root; direct CLI: unset |
 | `GPTAPPS_PORT` | Port used by either launcher | `8765` |
 | `GPTAPPS_APPS_DIR` | Launcher app catalog directory | `apps/` under the framework root |
 | `GPTAPPS_DATA_DIR` | Launcher conversation/asset directory | `.gptapps-data/` under the framework root |
@@ -261,22 +285,29 @@ Auto is an app-owner choice for application chat in both Studio and generated ap
 
 ### Enable and embed a policy
 
-Review [examples/routing-policy.example.json](examples/routing-policy.example.json), verify the candidate models and tools in your API project, then start the builder with that file alongside your usual launcher credentials/model settings:
+Review the bundled [routing-policy.json](routing-policy.json), verify the candidate models and tools in your API project, then start with your usual launcher credentials/model settings. Both launchers use this file automatically:
 
 ```sh
-./start.sh --routing-policy examples/routing-policy.example.json
-# Or use the Docker launcher, which mounts this file read-only:
-./docker-start.sh --routing-policy examples/routing-policy.example.json
+./start.sh
+# Or use Docker; the policy is mounted read-only automatically:
+./docker-start.sh
 ```
 
-The equivalent server configuration is `OPENAI_ROUTING_POLICY_FILE=/absolute/path/policy.json`. With the CLI:
+For a different policy, the flag overrides the default (and any inherited policy environment setting):
 
 ```sh
-python3 -m gptapps serve --apps apps --builder \
-  --routing-policy examples/routing-policy.example.json
+./start.sh --routing-policy /path/to/custom-policy.json
+./docker-start.sh --routing-policy /path/to/custom-policy.json
 ```
 
-At the model step choose **Auto — cost-first** or type `auto`; **Fixed — server default** and exact fixed model IDs remain available. Creation validates and embeds a snapshot under `runtime.routing`, with `runtime.model` set to `null`. You can also supply that validated snapshot in a canonical app manifest. A missing/malformed policy disables Auto with an actionable error; it does not prevent fixed-mode use. The policy is configuration, not a place for API keys or prompts.
+You can also set `OPENAI_ROUTING_POLICY_FILE=/absolute/path/policy.json` in the launcher's environment. Precedence is **explicit flag > nonempty environment setting > bundled starter**. [examples/routing-policy.example.json](examples/routing-policy.example.json) remains available as a separate editable reference. Direct CLI commands do not apply launcher defaults; supply the policy explicitly:
+
+```sh
+python3 -m gptapps serve --builder --apps apps --data .gptapps-data \
+  --routing-policy routing-policy.json
+```
+
+At the model step choose **Auto — cost-first** or type `auto`; **Fixed — server default** and exact fixed model IDs remain available. Creation validates and embeds a snapshot under `runtime.routing`, with `runtime.model` set to `null`. You can also supply that validated snapshot in a canonical app manifest. The launchers reject missing or unreadable policy files before startup. A readable policy that fails validation leaves Auto unavailable with an actionable error; fixed-mode use remains available. Direct CLI `--routing-policy` validates the file before starting its server. The policy is configuration, not a place for API keys or prompts.
 
 The server policy file controls new Auto snapshots. Editing it does not silently change existing app manifests or exports. To change an app's policy, edit its manifest, restart its server and start a new conversation. A standalone Auto export contains the snapshot and needs neither the original file nor `OPENAI_MODEL`; it still needs your runtime API key and project access.
 
@@ -512,7 +543,7 @@ flowchart TD
     Export --> Importer[Export normalizer]
     Importer --> Spec[Versioned application manifest]
     Validation --> Review[User reviews interpreted configuration]
-    Policy[Operator-reviewed routing policy JSON] --> PolicyCheck[Validate candidates, capabilities and limits]
+    Policy[Bundled routing-policy.json or operator override] --> PolicyCheck[Validate candidates, capabilities and limits]
     PolicyCheck --> Auto[Owner selects Auto: embed policy snapshot]
     Auto --> Review
     Chat --> Fixed[Owner selects fixed model / server default]
@@ -548,7 +579,7 @@ flowchart TD
 
 The AI interpreter has no file-system, Action, or execution tools; explicitly attached documents are available as input content. It returns a proposed value for the current step or a clarification/navigation intent. The separate uploader forwards explicitly selected files using the server's API key, creates a vector store and batch, and checks indexing status. **Use these files** attaches only a ready collection to the reviewed draft; **Use files for this app** updates an existing app's knowledge binding. An indexing failure leaves an existing binding unchanged.
 
-Auto embeds only a validated nonsecret policy snapshot. The setup interpreter is never recursively routed; Studio's application-chat path uses the same router/Responses runtime as an export. Fixed mode bypasses Decisions. The full chat input reaches the answering model after selection; the bounded evidence pass is separate.
+Framework launchers load the bundled starter policy automatically unless overridden; the owner still chooses Auto or Fixed during setup. Auto embeds only a validated nonsecret policy snapshot. The setup interpreter is never recursively routed; Studio's application-chat path uses the same router/Responses runtime as an export. Fixed mode bypasses Decisions. The full chat input reaches the answering model after selection; the bounded evidence pass is separate.
 
 Server validation runs before accepting settings; the final user instruction triggers app creation. Setup interpretation does not persist its own server conversation. Upload metadata persists locally for recovery, while document contents and the indexed vector store live in the OpenAI project. The ZIP includes the vector store ID and filenames, with no source documents, per-file upload metadata, upload-state files, or local conversation database. Packaging uses a runtime-file allowlist even if a custom data directory is nested under the source package.
 
@@ -869,7 +900,7 @@ Before relying on a migration, also test representative tasks against a live API
 | Python is missing or older than 3.11 | Install a supported interpreter or use `./docker-start.sh` |
 | Launcher cannot find the model/key in a non-interactive run | Set `OPENAI_API_KEY` and `OPENAI_MODEL` in that process's environment |
 | `Set OPENAI_SETUP_MODEL or OPENAI_MODEL` | Configure a server model for AI-assisted setup; Auto answer routing does not configure setup |
-| Auto is unavailable / missing routing policy | Set `OPENAI_ROUTING_POLICY_FILE` or use `--routing-policy FILE`; review the validated JSON example, then select Auto at creation |
+| Auto is unavailable / missing routing policy | Update and restart `./start.sh` or `./docker-start.sh`; both load `routing-policy.json` by default. Restore a missing bundled file or choose another with `--routing-policy FILE`. For direct CLI use, pass `--routing-policy routing-policy.json`. Select Auto at creation |
 | No eligible candidate / fallback ineligible | Review the embedded policy against all enabled inputs/tools, structured output and context/output budgets; do not remove requirements to force selection |
 | Auto uses fallback | Expand Routing status for the actual uncertainty, invalid-decision or transient-service reason; verify candidate access and evaluate the policy |
 | Decisions refusal, authentication or quota error | Resolve the displayed cause; these errors do not silently switch models or start an answer |
@@ -924,6 +955,7 @@ Restart the server to load client changes. Previously generated applications con
 │   ├── extensions.py           # Trusted Python function registry
 │   └── cli.py                  # import / check / build / serve
 ├── examples/minimal-export.json
+├── routing-policy.json          # Default starter policy for framework launchers
 ├── examples/routing-policy.example.json
 ├── plugin/                     # Optional migration skill scaffold
 ├── scripts/                    # Shared launcher helpers and container entrypoint

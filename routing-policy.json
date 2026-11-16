@@ -1,0 +1,65 @@
+{
+  "mode": "cost_first",
+  "version": "2026-11-15-starter-v1",
+  "router_model": "gpt-6-luna",
+  "timeout_seconds": 2,
+  "min_probability": 0.65,
+  "document_context_floor": 32768,
+  "fallback_model": "gpt-6-sol",
+  "candidates": [
+    {
+      "model": "gpt-6-luna",
+      "tier": "economy",
+      "cost_rank": 0,
+      "context_window": 922000,
+      "max_output_tokens": 128000,
+      "capabilities": [
+        "text",
+        "documents",
+        "images",
+        "web_search",
+        "image_generation",
+        "code_interpreter",
+        "file_search",
+        "function_calling",
+        "structured_output"
+      ]
+    },
+    {
+      "model": "gpt-6-sol",
+      "tier": "balanced",
+      "cost_rank": 10,
+      "context_window": 922000,
+      "max_output_tokens": 128000,
+      "capabilities": [
+        "text",
+        "documents",
+        "images",
+        "web_search",
+        "image_generation",
+        "code_interpreter",
+        "file_search",
+        "function_calling",
+        "structured_output"
+      ]
+    },
+    {
+      "model": "gpt-6-astra",
+      "tier": "advanced",
+      "cost_rank": 20,
+      "context_window": 922000,
+      "max_output_tokens": 128000,
+      "capabilities": [
+        "text",
+        "documents",
+        "images",
+        "web_search",
+        "image_generation",
+        "code_interpreter",
+        "file_search",
+        "function_calling",
+        "structured_output"
+      ]
+    }
+  ]
+}
