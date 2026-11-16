@@ -403,5 +403,14 @@ class RouterTests(unittest.TestCase):
         self.assertNotIn('total_tokens', result['router_usage'])
 
 
+class PromotionExplanationTests(unittest.TestCase):
+ def test_absent_lower_tier_is_not_described_as_failing_requirements(self):
+  value=policy();value['candidates']=value['candidates'][1:]
+  record=ModelRouter(Recorder()).select(app(value),'Extract names',[],[],[])
+  self.assertEqual(record['requested_model'],'test-balanced')
+  self.assertIn('No eligible economy candidate was available',record['selection_reason'])
+  self.assertNotIn('did not meet',record['selection_reason'])
+
+
 if __name__ == '__main__':
     unittest.main()

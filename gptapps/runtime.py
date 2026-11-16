@@ -165,7 +165,7 @@ class OpenAIClient:
 
 
 class Runtime:
-    def __init__(self, data_dir, client=None, registry=None, decisions_client=None):
+    def __init__(self, data_dir, client=None, registry=None, decisions_client=None, explanation_client=None):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.assets = self.data_dir / "assets"
@@ -174,6 +174,7 @@ class Runtime:
         with closing(sqlite3.connect(self.db_path)) as db, db:
             db.execute("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, app_id TEXT, fingerprint TEXT, messages TEXT)")
         self.db_path.chmod(0o600)
+        self.explanation_client = explanation_client
         self.decisions_client = decisions_client
         self.client = client or OpenAIClient()
         self.registry = registry or Registry()
@@ -289,6 +290,12 @@ class Runtime:
                          'fallback':False,'reason_codes':['fixed_model'],'selection_ms':0}
             # Callback checkpoint prevents starting Responses after a known disconnection.
             if emit is not None:emit({'type':'routing','routing':copy.deepcopy(routing)})
+            if app['runtime'].get('routing'):
+                from .explanations import explain_selection
+                if emit is not None and 'classified' in routing['reason_codes']:
+                    emit({'type':'status','message':'Explaining model selection…'})
+                routing=explain_selection(routing,app,message,history,files,self.explanation_client)
+                if emit is not None:emit({'type':'routing','routing':copy.deepcopy(routing)})
             answer_started=time.monotonic()
             reported_model=None
             # Only the application developer config becomes instructions; user text/files remain user input.

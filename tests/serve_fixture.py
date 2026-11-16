@@ -172,6 +172,30 @@ class FakeDecisions:
         return {'model':'gpt-6-luna','answers':[{'type':'choice','name':name,'choice':value,'probabilities':[{'value':option,'probability':1.0 if option==value else 0.0} for option in values]} for name,value,values in zip(['effort','task'],selected,from_values)],'usage':{'input_tokens':80,'output_tokens':0,'total_tokens':80}}
 
 
-web.Runtime = lambda data_dir, registry=None: Runtime(data_dir, FakeClient(), registry, decisions_client=FakeDecisions())
+class FakeExplanationClient:
+    def create(self,payload,timeout=3):
+        capture=os.environ.get('GPTAPPS_CAPTURE_EXPLANATION')
+        if capture:Path(capture).write_text(json.dumps(payload))
+        evidence=json.loads(payload['input'][0]['content'])['evidence']
+        text=evidence['current_request'].lower()
+        if 'explanation-timeout' in text:
+            from gptapps.explanations import ExplanationFailure
+            raise ExplanationFailure('timeout')
+        if 'spanish' in text:
+            summary='Basic Spanish greetings for a beginner'
+            reason='Common greetings and translations need a short direct answer with little synthesis.'
+        elif 'complex' in text:
+            summary='Compare tradeoffs and develop a migration plan'
+            reason='Reconciling constraints and sequencing a plan calls for demanding multi-step synthesis.'
+        elif evidence['files']:
+            summary='Summarize the supplied project documents'
+            reason='Condensing the available notes is a focused summary task; binary contents were not inspected.'
+        else:
+            summary='Summarize the current project plan'
+            reason='A short summary of the supplied context requires limited synthesis.'
+        return {'status':'completed','model':payload['model'],'usage':{'input_tokens':95,'output_tokens':35,'total_tokens':130},'output':[{'type':'message','content':[{'type':'output_text','text':json.dumps({'request_summary':summary,'effort_reason':reason})}]}]}
+
+
+web.Runtime = lambda data_dir, registry=None: Runtime(data_dir, FakeClient(), registry, decisions_client=FakeDecisions(), explanation_client=FakeExplanationClient())
 web.KnowledgeManager = lambda data_dir: KnowledgeManager(data_dir, FakeKnowledgeClient(data_dir))
 web.serve(Path(sys.argv[1]), Path(sys.argv[2]), int(sys.argv[3]), builder="--standalone" not in sys.argv)

@@ -11,7 +11,7 @@ def copy_runtime(destination):
     """Export known source/assets only, even when --data lives beneath this package."""
     package = Path(__file__).parent
     files = ["__init__.py", "version.py", "__main__.py", "build.py", "cli.py", "extensions.py", "runtime.py", "setup.py",
-             "spec.py", "web.py", "attachments.py", "attachments.js", "routing.py", "decisions.py", "routing.js", "routing.css", "knowledge.py", "chat.html", "chat.js", "knowledge.js", "chat.css", "LICENSE"]
+             "spec.py", "web.py", "attachments.py", "attachments.js", "routing.py", "decisions.py", "explanations.py", "routing.js", "routing.css", "knowledge.py", "chat.html", "chat.js", "knowledge.js", "chat.css", "LICENSE"]
     files += ["templates/" + name for name in ("start.sh", "docker-start.sh", "launcher-common.sh", "docker-entrypoint.sh", "Dockerfile", ".dockerignore")]
     files += ["vendor/" + name for name in ("marked.umd.js", "purify.min.js", "marked-LICENSE.txt", "dompurify-LICENSE.txt", "README.md")]
     files += ["icons/" + name for name in ("plus.svg", "download.svg", "history.svg", "arrow-up.svg", "arrow-up-right.svg", "chevron-down.svg", "lock-keyhole.svg", "layers.svg", "LICENSE.txt", "README.md")]
@@ -63,8 +63,8 @@ original framework folder or access to the original GPT in ChatGPT.
 An Auto app embeds its approved routing policy in `app.json`. It calls OpenAI
 Decisions API (`/v1/decisions`) to choose an eligible answering model, then uses
 Responses API (`/v1/responses`) to generate and stream the answer. The **Routing status** panel in the left sidebar, below **Recent Conversations**,
-shows the requested/provider-reported model, a short rule-based
-selection explanation, fallback and separate router/answer usage. Saved turns
+shows the requested/provider-reported model, a prompt-specific request assessment,
+the actual policy rule, fallback and separate classifier/explanation/answer usage. Saved turns
 retain this information. On narrow screens, open **Conversations and routing** in
 the header to view it. Fixed-model apps continue to use their configured model.
 
@@ -81,6 +81,18 @@ prices or a promise of savings. See the policy and README in the framework for
 capability/cost verification before real use. Timeout/invalid decisions can use
 the configured compatible fallback; authentication, refusal and quota errors
 remain visible. The app never automatically pays for another generated answer.
+
+For a normal Auto classification, one extra tool-free Responses request to
+`gpt-6-luna` generates a brief request assessment from the same bounded evidence.
+It uses `store: false`, `reasoning.effort: none`, a 512-output-token cap and a
+3-second transport timeout. This adds API usage and latency; it cannot change the
+selected answer model. An unavailable/refused/invalid explanation retains the
+policy reason and continues the first answer attempt without retrying the
+explanation. Fixed, sole-candidate and fallback routes skip this call. Saved turns
+retain the derived assessment; older history stays readable, and loading it or
+running function-tool rounds does not generate another assessment. This is a
+public assessment, not hidden reasoning or a quality guarantee. It can describe
+private task context, so protect the local history directory.
 
 ## Chat attachments
 

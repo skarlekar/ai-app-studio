@@ -23,6 +23,8 @@ class RouterHTTPTests(unittest.TestCase):
       events=[json.loads(line[6:]) for line in response.read().decode().splitlines() if line.startswith('data: ')]
      self.assertTrue(any(event['type']=='routing' for event in events));done=events[-1];self.assertEqual(done['type'],'done');sid=done['session_id']
      self.assertEqual(done['message']['routing']['reported_model'],'test-economy')
+     self.assertIn('project documents',done['message']['routing']['request_assessment'])
+     self.assertEqual(done['message']['routing']['explanation_usage']['total_tokens'],130)
      evidence=json.loads(json.loads(decision.read_text())['input']);self.assertEqual(len(evidence['files']),2)
      pdf=next(f for f in evidence['files'] if f['name']=='guide.pdf');self.assertNotIn('excerpt',pdf)
      self.assertIn('data:application/pdf;base64,',json.dumps(json.loads(capture.read_text())['input']))
@@ -31,7 +33,7 @@ class RouterHTTPTests(unittest.TestCase):
      with request(base,f'/api/sessions?app={aid}&id={sid}') as response:self.assertEqual(json.load(response)['messages'][-1]['routing']['requested_model'],'test-advanced')
      with request(base,f'/api/build?app={aid}') as response:
       with zipfile.ZipFile(io.BytesIO(response.read())) as package:
-       self.assertTrue(all('gptapps/'+name in package.namelist() for name in ('routing.py','decisions.py','routing.js','routing.css')))
+       self.assertTrue(all('gptapps/'+name in package.namelist() for name in ('routing.py','decisions.py','explanations.py','routing.js','routing.css')))
        manifest=json.loads(package.read('app.json'));self.assertIn('routing',manifest['runtime']);self.assertNotIn(str(policy_file),package.read('app.json').decode())
        self.assertFalse(any(name.endswith('.sqlite3') for name in package.namelist()))
     finally:stop(process)

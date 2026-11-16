@@ -18,7 +18,7 @@ aside #sessions {max-height:28dvh;overflow:auto;flex-shrink:0;scrollbar-width:th
 #routing-state {color:#adc5bc;font-size:10px;}
 #routing-model {font-weight:600;margin:10px 0 0;}
 #routing-route {margin:5px 0 0;color:#c2dfb6;}
-#routing-summary {margin:7px 0 0;color:#adc5bc;}
+#routing-summary {margin:7px 0 0;color:#adc5bc;white-space:pre-line;max-height:36dvh;overflow:auto;scrollbar-width:thin;}
 .routing-status[data-state="failed"] {border-color:#cba785;}
 .routing-status details {margin-top:10px;}
 .routing-status summary {cursor:pointer;color:#d0e6c1;width:fit-content;}

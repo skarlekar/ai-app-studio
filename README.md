@@ -39,7 +39,14 @@ Explore the [AI App Studio companion page](https://ai-app-studio-introduction.pe
 
 ## Release notes
 
-### 0.2.1 — 2026-11-15 (latest)
+### 0.2.2 — 2026-11-15 (latest)
+
+- **Prompt-specific routing explanations:** the sidebar describes the actual requested task and its demands, alongside the server's model-selection rule, instead of only showing “Required effort classified.”
+- **Separate assessment and policy facts:** Decisions still classifies effort/task. After a normal classification, one bounded Responses request creates a brief public assessment; it cannot change the chosen model. Fixed, sole-candidate and fallback selections keep their factual policy reasons without this extra call.
+- **Visible overhead and reliable answers:** explanation model, usage, time and availability appear separately from classifier/answer usage. A 3-second transport timeout, 512-output-token limit, no tools and no retries bound the extra work. Unavailable/invalid/refused explanations leave the original selection and first answering attempt intact.
+- **Portable history and exports:** new saved turns retain the assessment. Older records remain readable without generating paid explanations on load. Newly exported apps include the same behavior. See [Attachment evidence, status and cost](#attachment-evidence-status-and-cost).
+
+### 0.2.1 — 2026-11-15
 
 - **Auto routing ready at startup:** `./start.sh` and `./docker-start.sh` load the bundled `routing-policy.json` by default, so selecting Auto no longer requires an extra launch option.
 - **Configurable policy:** use `--routing-policy FILE` to override the starter; an existing `OPENAI_ROUTING_POLICY_FILE` environment setting is also honored. Explicit flag > nonempty environment > bundled starter. Docker mounts the selected host file read-only.
@@ -339,9 +346,13 @@ Routing considers the full current message (within the existing 16,000-character
 
 PDF, Office documents, RTF/ODT and images provide **metadata only** during routing; this release does not extract or inspect their contents for classification or send those files directly to Decisions. The answer still receives the original full request, retained history and validated files through Responses. Routing evidence caps do not truncate answer input. Byte sizes are not token counts, and provider context limits can still reject an input. The existing 5-file, 10 MiB-per-file and 20 MiB-per-conversation intake limits are unchanged.
 
-The accessible **Routing status** section sits in the left sidebar below **Recent Conversations** in both Studio and generated apps. On narrow screens, open **Conversations and routing** in the header to view it. The section shows selection progress, the answer model, route and short explanation constructed from validated classifications and applied rules. It labels the answer model as provider-reported when available and requested otherwise, separately from the Decisions router model. Expand details for fallback reasons, evidence coverage, probabilities, timings and separate router/answer token usage. Saved turns retain their compact routing record; reopening history restores it. Raw routing excerpts are not copied into that record or new logs. The version/build footer remains separate.
+The accessible **Routing status** section sits in the left sidebar below **Recent Conversations** in both Studio and generated apps. On narrow screens, open **Conversations and routing** in the header to view it. The section shows selection progress, the answer model, route and a prompt-specific **Request assessment**, followed by the actual policy reason. For example: “Basic Spanish greetings for a beginner. Common greetings and translations need a short direct answer with little synthesis.” The policy then explains that the selected model has the lowest configured cost rank among eligible models meeting the classified effort. It labels the answer model as provider-reported when available and requested otherwise, separately from the Decisions router model. Expand details for the real applied policy rule, explanation availability, fallback reasons, evidence coverage, probabilities, model identities, timings and separate **classifier / explanation / answer** token usage. New saved turns retain their compact assessment and routing record; reopening history restores them without an API call. Older turns show that an explanation was not recorded. Raw routing excerpts are not copied into that record or new logs; the brief derived assessment is stored with the turn. The version/build footer remains separate.
 
-Cost-first routing aims to send routine work to an economical approved model while reserving higher tiers for harder tasks. It adds a classification call and latency when several candidates are eligible. Evaluate **aggregate router plus answer usage**, including cached/uncached input, reasoning/output, hosted tools, fallbacks and any user retries; token counts and policy cost ranks are not dollar receipts. Ranks are reviewed configuration, not live prices, and this release does not promise a savings percentage or universal quality level. Compare against a fixed-model baseline on representative simple, complex, tool and document tasks, measuring usefulness/task success, errors, total cost, fallback frequency and latency. Some quality variation may accompany savings. Consult current [API pricing](https://developers.openai.com/api/docs/pricing) and the [Decisions guide](https://developers.openai.com/api/docs/guides/decisions) before a paid evaluation.
+For normally classified Auto requests, the runtime sends the same bounded text/metadata evidence to a separate tool-free **Responses API + Structured Outputs** request using `gpt-6-luna`, with `store: false`, `reasoning.effort: none`, at most 512 output tokens and a 3-second transport timeout. It returns a request description (up to 120 characters) and effort explanation (up to 180 characters). This is a generated public assessment, not internal model reasoning or proof of answer quality. It may be imperfect. Model selection is already complete, and the assessment cannot override it. Server-authored policy facts and metadata-only file limits stay visible. No PDF/Office/image contents are extracted for the explanation.
+
+If the explanation times out, is refused, malformed or unavailable, the UI says so and retains the policy reason; it continues with the original answer model without an explanation retry. Fixed apps, sole eligible candidates and fallback routes do not request an assessment. Tool rounds and history loading do not generate another one. Known disconnections are checked before/after explanation generation, and failed chat attempts are not saved. No additional setup or policy-file change is required; restart Studio or regenerate existing standalone exports to receive the new code.
+
+Cost-first routing aims to send routine work to an economical approved model while reserving higher tiers for harder tasks. It adds a classification call when several candidates are eligible and, for a normal classification, one additional short Responses explanation request before the answer. Both add latency and API usage. Evaluate **aggregate classifier plus explanation plus answer usage**, including cached/uncached input, reasoning/output, hosted tools, fallbacks and any user retries; token counts and policy cost ranks are not dollar receipts. Ranks are reviewed configuration, not live prices, and this release does not promise a savings percentage or universal quality level. Compare against a fixed-model baseline on representative simple, complex, tool and document tasks, measuring usefulness/task success, errors, total cost, fallback frequency and latency. Some quality variation may accompany savings. Consult current [API pricing](https://developers.openai.com/api/docs/pricing) and the [Decisions guide](https://developers.openai.com/api/docs/guides/decisions) before a paid evaluation.
 
 ## Ways to use the framework
 
@@ -570,7 +581,10 @@ flowchart TD
     Filter -->|One eligible| Select
     Decisions --> Select[Eligible tier and cost-rank selection / explicit fallback]
     Studio -->|Fixed| Answer[Responses API: stream full inputs and tools]
-    Select --> Answer
+    Select --> ExplainWhen{Normal classification?}
+    ExplainWhen -->|Yes| Explain[Responses API: bounded request assessment<br/>No tools; cannot change selection]
+    Explain -->|Assessment or unavailable status| Answer
+    ExplainWhen -->|Sole candidate or fallback| Answer
     Answer --> Status[Sidebar routing status and local history<br/>Answer model, reason and usage]
     Spec --> Report[Compatibility analysis]
     Spec --> Package[Standalone folder / ZIP]
@@ -579,7 +593,7 @@ flowchart TD
 
 The AI interpreter has no file-system, Action, or execution tools; explicitly attached documents are available as input content. It returns a proposed value for the current step or a clarification/navigation intent. The separate uploader forwards explicitly selected files using the server's API key, creates a vector store and batch, and checks indexing status. **Use these files** attaches only a ready collection to the reviewed draft; **Use files for this app** updates an existing app's knowledge binding. An indexing failure leaves an existing binding unchanged.
 
-Framework launchers load the bundled starter policy automatically unless overridden; the owner still chooses Auto or Fixed during setup. Auto embeds only a validated nonsecret policy snapshot. The setup interpreter is never recursively routed; Studio's application-chat path uses the same router/Responses runtime as an export. Fixed mode bypasses Decisions. The full chat input reaches the answering model after selection; the bounded evidence pass is separate.
+Framework launchers load the bundled starter policy automatically unless overridden; the owner still chooses Auto or Fixed during setup. Auto embeds only a validated nonsecret policy snapshot. The setup interpreter is never recursively routed; Studio's application-chat path uses the same router/Responses runtime as an export. Fixed mode bypasses Decisions and request-assessment generation. The full chat input reaches the answering model after selection; the bounded evidence pass is separate.
 
 Server validation runs before accepting settings; the final user instruction triggers app creation. Setup interpretation does not persist its own server conversation. Upload metadata persists locally for recovery, while document contents and the indexed vector store live in the OpenAI project. The ZIP includes the vector store ID and filenames, with no source documents, per-file upload metadata, upload-state files, or local conversation database. Packaging uses a runtime-file allowlist even if a custom data directory is nested under the source package.
 
@@ -599,7 +613,10 @@ flowchart TD
     Filter -->|Several eligible| Decisions[OpenAI Decisions API<br/>Effort and task typed choices]
     Filter -->|One eligible: skip classifier| Select[Choose approved candidate<br/>or compatible explicit fallback]
     Decisions --> Select
-    Select --> Pin
+    Select --> ExplainWhen{Normal classification?}
+    ExplainWhen -->|Yes| Explain[Responses API: brief request assessment<br/>Bounded text/metadata; no tools]
+    Explain -->|Assessment or unavailable status| Pin
+    ExplainWhen -->|Sole candidate or fallback| Pin
     Pin -->|Full original inputs and retained files| Responses[OpenAI Responses API: stream answer]
     Responses -->|If knowledge is bound| FileSearch[Hosted file_search]
     FileSearch <--> Knowledge[(OpenAI vector store<br/>Prepared by the framework)]
@@ -611,14 +628,14 @@ flowchart TD
     Responses --> Results[Text, citations, images and reported model/usage]
     Results --> Runtime
     Runtime --> Assets[(Local generated images)]
-    Runtime --> Status[Sidebar below Recent Conversations<br/>Routing status: model, reason, fallback<br/>Separate router/answer usage]
+    Runtime --> Status[Sidebar below Recent Conversations<br/>Routing status: model, reason, fallback<br/>Separate classifier/explanation/answer usage]
     Status --> HTTP
     HTTP --> Browser
 ```
 
 Each saved conversation is bound to its app ID and a configuration fingerprint: fixed apps include the effective model; Auto apps include the policy snapshot rather than the model chosen per turn. A changed app/policy or fixed model requires a new conversation, while unchanged Auto policies can select different models across turns. Previous user and assistant text, plus saved chat attachments, are replayed to the API with `store: false`. Chat attachment bytes remain in local private SQLite history; session UI responses expose names, MIME types and sizes only.
 
-The generated app is self-contained: it reads the saved manifest and does not need the framework running or, for Auto, the original policy file. Its bundled router classifies bounded evidence through Decisions; original files go to the answering Responses request. Selection and fallback reasons remain visible in Routing status and saved history. When knowledge is bound, its Responses request declares `file_search` with `bindings.vector_store_ids`. OpenAI handles retrieval from the already indexed documents and returns answer text and file citations. Chat attachments go directly in the Responses request without creating hosted Files resources. The generated app does not upload permanent knowledge documents, create vector stores, run the setup interpreter, or call the Agents API. Use an API key with access to the same OpenAI project that owns the store; copying the ZIP to another machine does not copy or transfer the hosted knowledge.
+The generated app is self-contained: it reads the saved manifest and does not need the framework running or, for Auto, the original policy file. Its bundled router classifies bounded evidence through Decisions; original files go to the answering Responses request. The optional prompt-specific assessment and authoritative selection/fallback reasons remain visible in Routing status and saved history. When knowledge is bound, its Responses request declares `file_search` with `bindings.vector_store_ids`. OpenAI handles retrieval from the already indexed documents and returns answer text and file citations. Chat attachments go directly in the Responses request without creating hosted Files resources. The generated app does not upload permanent knowledge documents, create vector stores, run the setup interpreter, or call the Agents API. Use an API key with access to the same OpenAI project that owns the store; copying the ZIP to another machine does not copy or transfer the hosted knowledge.
 
 ## Attach files to chat
 
@@ -647,6 +664,7 @@ Chat answers/tools and setup inference use **`POST https://api.openai.com/v1/res
 | Framework: knowledge indexing | Vector Stores API `POST /v1/vector_stores/{id}/file_batches` | Indexes the uploaded file IDs together |
 | Framework: indexing progress | Vector Stores API `GET /v1/vector_stores/{id}/file_batches/{batch_id}` | Checks completion and failed/cancelled counts before binding |
 | Framework and converted app: Auto routing | Decisions API `POST /v1/decisions`, two typed choices using `gpt-6-luna` | Once before an Auto answer when multiple candidates are eligible; bounded text/metadata evidence only |
+| Framework and converted app: routing explanation | Responses API `POST /v1/responses` with Structured Outputs, `gpt-6-luna`, `store: false` and no tools | Once after a normal Auto classification; generates a brief public request assessment from the same bounded evidence, with separate usage; never changes selection |
 | Converted app: chat | Responses API, with `stream: true` for the web chat | Each app conversation turn, using the fixed or selected answer model |
 | Framework and converted app: chat attachments | Responses inline `input_file` and `input_image` content | Explicitly selected/dropped files sent with a message; no Files/Vector Stores call |
 | Converted app: structured output | Responses `text.format` with the configured object JSON Schema | If `runtime.output_schema` is set |
@@ -839,7 +857,7 @@ The root [.gitignore](.gitignore) excludes local secrets, `apps/`, `migrated/`, 
 
 Before your first public commit, inspect what will be staged. Ignore rules do not remove files that were already tracked and cannot detect private content saved under arbitrary names. Never commit `.env`, API keys, private exports, chat databases, or generated app ZIPs. Prefer the documented ignored directories for local data and generated builds.
 
-Keys remain in the server environment. The framework does not log request bodies, authorization headers, or conversation text, and it summarizes provider errors. Instructions and relevant user inputs are sent to OpenAI when the associated API feature is used. Auto also sends the documented bounded text/excerpts and attachment metadata to Decisions, then full answering inputs to Responses; it adds no raw-evidence log or second stored copy of excerpts. Local conversation history and generated images persist unencrypted under the data directory; stop the server and delete that directory to clear them. Failed requests can still incur API charges.
+Keys remain in the server environment. The framework does not log request bodies, authorization headers, or conversation text, and it summarizes provider errors. Instructions and relevant user inputs are sent to OpenAI when the associated API feature is used. Auto sends the documented bounded text/excerpts and attachment metadata to Decisions and, for a normal classification, to the Responses request-assessment call; full answering inputs then go to the answering Responses request. It adds no raw-evidence log or second stored copy of excerpts. The derived request assessment is saved with local chat history and may itself describe private task context. Local conversation history and generated images persist unencrypted under the data directory; stop the server and delete that directory to clear them. Failed requests can still incur API charges.
 
 For shared hosting, add authentication, user-owned sessions, tenant isolation, HTTPS, secrets management, rate limits, budgets, backups/deletion policies, observability, and approved write handling. Docker packaging does not supply these controls.
 
@@ -865,7 +883,7 @@ Run the standard-library unit/integration suite:
 python3 -m unittest discover -s tests -v
 ```
 
-Tests use fake providers, temporary app catalogs, and isolated history. They cover import preservation, empty knowledge/Actions, multiple-file upload validation, multipart requests, indexing readiness/failures, upload recovery, provider redirect rejection, private export exclusion, configuration blockers, AI interpretation contracts, session isolation, function calling, standalone builds, and launchers. Routing coverage includes policy validation, bounded/metadata-only evidence, typed Decisions choices, capability filtering, fallback/error behavior, per-turn model pinning, fixed compatibility, history status and export policy snapshots. They do not require real keys or make OpenAI requests.
+Tests use fake providers, temporary app catalogs, and isolated history. They cover import preservation, empty knowledge/Actions, multiple-file upload validation, multipart requests, indexing readiness/failures, upload recovery, provider redirect rejection, private export exclusion, configuration blockers, AI interpretation contracts, session isolation, function calling, standalone builds, and launchers. Routing coverage includes policy validation, bounded/metadata-only evidence, typed Decisions choices, capability filtering, fallback/error behavior, per-turn model pinning, fixed compatibility, history status, prompt-specific explanation validation/failures/usage, cancellation checkpoints and export policy snapshots. They do not require real keys or make OpenAI requests.
 
 Streaming tests also verify that text arrives before provider completion, interrupted/disconnected turns are not committed, function-call rounds still work, and SSE parsing preserves UTF-8. Optional browser-stream decoder tests use Node's built-in test runner without npm dependencies:
 
@@ -942,6 +960,7 @@ Restart the server to load client changes. Previously generated applications con
 │   ├── runtime.py              # Responses client and chat/session runtime
 │   ├── routing.py              # Policy, bounded evidence and answer-model selection
 │   ├── decisions.py            # Server-side Decisions API client
+│   ├── explanations.py         # Bounded public request assessments via Responses
 │   ├── web.py                  # Local HTTP server and builder endpoints
 │   ├── chat.html               # Builder and end-user UI
 │   ├── chat.js                 # Streaming chat client and sanitized Markdown

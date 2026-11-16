@@ -282,6 +282,7 @@ class ModelRouter:
             raise ValueError('No eligible routing candidate supports this request, tools and context/output budget; review runtime.routing')
         fallback = next((c for c in eligible if c['model'] == policy['fallback_model']), None)
         usage, probabilities, task, reason, used_fallback = {}, {}, 'other', 'single_eligible', False
+        effort = None
         if len(eligible) == 1:
             selected = eligible[0]
         else:
@@ -337,11 +338,21 @@ class ModelRouter:
             'invalid_decision': 'Fallback used because the routing service returned an invalid classification.',
             'tier_unavailable': 'Fallback used because no eligible approved model meets the classified effort tier.',
         }
-        summary = reasons[reason]
+        if reason == 'classified':
+            selection_reason = (f"Selected {selected['model']}: lowest configured cost rank among eligible "
+                                f"{route} models meeting the {effort} effort classification.")
+            if route != effort:
+                selection_reason += f" No eligible {effort} candidate was available for this request."
+        elif reason == 'single_eligible':
+            selection_reason = f"Selected {selected['model']}: only approved candidate meeting this request's input/tool and context/output requirements."
+        else:
+            selection_reason = reasons[reason] + f" Selected the configured fallback {selected['model']}."
+        summary = selection_reason
         if coverage['metadata_only_files']:
             summary += ' Some files provided metadata only; their contents were not inspected for routing.'
         return {'requested_model': selected['model'], 'route': route, 'task': task,
-                'summary': summary, 'reason_codes': [reason], 'fallback': used_fallback,
+                'summary': summary, 'selection_reason': selection_reason, 'classified_effort': effort,
+                'required_capabilities': sorted(required), 'reason_codes': [reason], 'fallback': used_fallback,
                 'router_model': policy['router_model'], 'policy_version': policy['version'],
                 'evidence': coverage, 'probabilities': probabilities, 'router_usage': usage,
                 'selection_ms': round((time.monotonic()-started)*1000, 2)}

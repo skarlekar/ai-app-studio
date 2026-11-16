@@ -162,7 +162,7 @@ test('shows actual router coverage and classification probabilities while keepin
  assert.match(details,/Binary document context usage unknown.*Yes/);
  assert.match(details,/Effort classification probability.*87.0%/);
  assert.match(details,/Task classification probability.*90.0%/);
- assert.match(details,/Required effort classified/);
+ assert.match(details,/Effort classification accepted/);
 });
 
 test('keeps routing status in the shared sidebar below recent conversations, outside the chat composer',()=>{
@@ -171,4 +171,28 @@ test('keeps routing status in the shared sidebar below recent conversations, out
  assert.match(sidebar,/<nav id="sessions"[\s\S]*?<section id="routing-status"/);
  assert.equal((html.match(/id="routing-status"/g)||[]).length,1);
  assert.doesNotMatch(html.match(/<footer>([\s\S]*?)<\/footer>/)?.[1]||'',/id="routing-status"/);
+});
+
+test('shows a prompt-specific assessment and actual policy rule with separate explanation usage',()=>{
+ const {c,nodes}=ui();renderer(c);
+ c.routingShow({...record,request_assessment:'Basic Spanish greetings need a short direct answer with little synthesis.',selection_reason:'Selected answer-2026-10-01: lowest configured cost rank among eligible economy models.',explanation_status:'generated',explanation_model:'router-2026-10-01',explanation_usage:{input_tokens:75,output_tokens:30,total_tokens:105},explanation_ms:125},'saved');
+ assert.match(nodes['routing-summary'].textContent,/Spanish greetings/);
+ assert.match(nodes['routing-detail-list'].textContent,/Applied rules.*lowest configured cost rank/);
+ assert.match(nodes['routing-detail-list'].textContent,/Explanation input tokens.*75/);
+ assert.match(nodes['routing-detail-list'].textContent,/Explanation output tokens.*30/);
+ assert.doesNotMatch(nodes['routing-detail-list'].textContent,/Effort classification accepted/);
+});
+
+test('keeps an honest policy reason on explanation failures and restores older saved records safely',()=>{
+ const {c,nodes}=ui();renderer(c);
+ c.routingShow({...record,summary:'The selected model meets the request requirements.',selection_reason:'Selected answer-2026-10-01 by policy cost rank.',explanation_status:'unavailable',explanation_reason:'timeout'});
+ assert.match(nodes['routing-summary'].textContent,/Request assessment unavailable/);
+ assert.match(nodes['routing-summary'].textContent,/meets the request requirements/);
+ assert.match(nodes['routing-detail-list'].textContent,/Unavailable; policy reason retained/);
+ assert.match(nodes['routing-detail-list'].textContent,/Explanation timed out/);
+ c.routingRestore([{role:'assistant',routing:record}]);
+ assert.match(nodes['routing-detail-list'].textContent,/Not recorded for this saved turn/);
+ c.routingShow({...record,request_assessment:'<img src=x onerror=alert(1)>',selection_reason:'<script>fake</script>',explanation_status:'constructor',explanation_reason:'SECRET',explanation_model:'<script>fake</script>',explanation_usage:{secret:'PRIVATE'}});
+ assert.match(nodes['routing-summary'].textContent,/<img src=x onerror=alert\(1\)>/);
+ assert.doesNotMatch(nodes['routing-detail-list'].textContent,/SECRET|PRIVATE|native code/);
 });
