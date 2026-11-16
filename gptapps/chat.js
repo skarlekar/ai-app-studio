@@ -1,4 +1,4 @@
-const $=id=>document.getElementById(id);let apps=[],current=null,sid=null,busy=false,wizard=null,builderEnabled=false;
+const $=id=>document.getElementById(id);let apps=[],current=null,sid=null,busy=false,wizard=null,builderEnabled=false,routingAvailable=false,routingError='';
 async function api(path,options){const response=await fetch(path,options);const data=await response.json();if(!response.ok)throw new Error(data.error||'Request failed');return data}
 function element(tag,text,className){const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(className)el.className=className;return el}
 function showError(error){$('error').textContent=error.message||String(error)}
@@ -7,7 +7,7 @@ function resizeComposer(){const input=$('input');input.style.height='auto';input
 function setInput(text){$('input').value=text;resizeComposer();}
 function icon(name){const node=element('span',undefined,'icon icon-'+name);node.setAttribute('aria-hidden','true');return node;}
 function emptyWorkspace(){
- clearChatFiles();wizard=null;sid=null;resetKnowledge();closeHistory();$('messages').replaceChildren();$('sessions').replaceChildren();setInput('');
+ routingClear();clearChatFiles();wizard=null;sid=null;resetKnowledge();closeHistory();$('messages').replaceChildren();$('sessions').replaceChildren();setInput('');
  const box=element('div');box.id='welcome';box.append(element('div','YOUR APP STUDIO','welcome-kicker'),element('h2','Create your first application.'));
  const copy=element('p','Turn a GPT into a standalone app. Start the guided setup when you’re ready.');copy.id='description';box.append(copy);
  const button=element('button','Create application','empty-create');button.onclick=beginSetup;box.append(button);$('messages').append(box);updateChrome();
@@ -41,6 +41,15 @@ function updateChrome(){
  $('input').placeholder=wizard?'Write your answer…':current?'Message '+current.name+'…':'Create an application to begin…';
  document.title=wizard?'Create an application · App Studio':current?.name||'App Studio';
  updateKnowledgePanel();
+ updateModelChoices();
+}
+function updateModelChoices(){
+ const visible=!!wizard&&steps[wizard.step]?.key==='model',working=busy||knowledgeBusy;
+ $('model-choices').hidden=!visible;
+ $('model-auto').disabled=working||!routingAvailable;$('model-fixed').disabled=working;
+ $('model-routing-help').textContent=routingAvailable?'Auto selects an approved answer model for each turn using the configured cost-first policy. Fixed uses the server default; enter a model ID below to choose a specific fixed model.':routingError||'Auto requires a configured routing policy. Fixed uses the server default; you can also enter a specific model ID.';
+ $('model-auto').onclick=()=>{if(!visible||working||!routingAvailable)return;setInput('auto');$('form').requestSubmit();};
+ $('model-fixed').onclick=()=>{if(!visible||working)return;setInput('default');$('form').requestSubmit();};
 }
 function renderMarkdown(body, text) {
  if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') { body.textContent=text; return; }
@@ -109,7 +118,7 @@ async function streamChat(payload,onEvent){
  }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
 }
 async function sendChat(text){
- const selectedFiles=[...chatFiles];
+ routingBegin();const selectedFiles=[...chatFiles];
  $('welcome')?.remove();const oldCount=$('messages').children.length;
  message({role:'user',content:text,attachments:selectedFiles});setInput('');loading(true);
  const pending=message({role:'assistant',content:''}),body=pending.querySelector('.body');
@@ -123,7 +132,8 @@ async function sendChat(text){
  try{
   const attachments=await chatFilePayload(selectedFiles);
   const result=await streamChat({app_id:current.id,session_id:sid,message:text,attachments},event=>{
-   if(event.type==='reset'){parts.clear();$('status').textContent='Thinking…';schedule();}
+   if(event.type==='routing')routingShow(event.routing);
+   else if(event.type==='reset'){parts.clear();$('status').textContent='Thinking…';schedule();}
    else if(event.type==='status')$('status').textContent=event.message;
    else if(event.type==='delta'){
     const index=event.output_index||0,part=event.content_index||0,key=index+':'+part;
@@ -132,9 +142,9 @@ async function sendChat(text){
    }
   });
   active=false;if(frame)cancelAnimationFrame(frame);frame=0;
-  clearChatFiles();sid=result.session_id;const completed=message(result.message);pending.replaceWith(completed);await sessions().catch(showError);
+  routingShow(result.message?.routing,'saved');clearChatFiles();sid=result.session_id;const completed=message(result.message);pending.replaceWith(completed);await sessions().catch(showError);
  }catch(error){
-  while($('messages').children.length>oldCount)$('messages').lastChild.remove();
+  routingFailed();while($('messages').children.length>oldCount)$('messages').lastChild.remove();
   setInput(text);showError(error);try{await sessions();}catch{}
  }finally{active=false;if(frame)cancelAnimationFrame(frame);loading(false);$('input').focus();}
 }
@@ -150,8 +160,8 @@ function welcome(){
  box.append(starters);box.append(element('div','Pick a starting point, or make the conversation your own.','welcome-footnote'));
  $('messages').replaceChildren(box);
 }
-async function sessions(){const records=await api('/api/sessions?app='+encodeURIComponent(current.id));$('sessions').replaceChildren();if(!records.length)$('sessions').append(element('div','No conversations yet','empty'));for(const item of records){const button=element('button',item.title,'session'+(item.id===sid?' active':''));button.title=item.title;button.disabled=busy;button.onclick=async()=>{try{const saved=await api('/api/sessions?app='+encodeURIComponent(current.id)+'&id='+encodeURIComponent(item.id));clearChatFiles();setInput('');sid=saved.id;$('messages').replaceChildren();saved.messages.forEach(message);closeHistory();await sessions()}catch(e){showError(e)}};$('sessions').append(button)}}
-async function start(){clearChatFiles();setInput('');closeHistory();wizard=null;resetKnowledge();sid=null;$('input').maxLength=16000;$('error').textContent='';$('apps').disabled=false;updateChrome();welcome();await sessions();$('input').focus()}
+async function sessions(){const records=await api('/api/sessions?app='+encodeURIComponent(current.id));$('sessions').replaceChildren();if(!records.length)$('sessions').append(element('div','No conversations yet','empty'));for(const item of records){const button=element('button',item.title,'session'+(item.id===sid?' active':''));button.title=item.title;button.disabled=busy;button.onclick=async()=>{routingClear();try{const saved=await api('/api/sessions?app='+encodeURIComponent(current.id)+'&id='+encodeURIComponent(item.id));clearChatFiles();setInput('');sid=saved.id;$('messages').replaceChildren();saved.messages.forEach(message);routingRestore(saved.messages);closeHistory();await sessions()}catch(e){showError(e)}};$('sessions').append(button)}}
+async function start(){routingClear();clearChatFiles();setInput('');closeHistory();wizard=null;resetKnowledge();sid=null;$('input').maxLength=16000;$('error').textContent='';$('apps').disabled=false;updateChrome();welcome();await sessions();$('input').focus()}
 function loading(value){busy=value;$('send').disabled=value;$('apps').disabled=value||!!wizard;$('new').disabled=value;$('create').disabled=value;$('input').disabled=value;document.querySelectorAll('.session').forEach(b=>b.disabled=value);$('status').textContent=value?'Working…':'Ready';$('status').dataset.state=value?'busy':'ready';updateChrome()}
 const steps=[
  {key:'name',question:'What is the name of your application?'},
@@ -159,15 +169,15 @@ const steps=[
  {key:'instructions',question:'Paste your GPT’s full instructions, or attach a UTF-8 text/Markdown file. I will preserve them as application configuration. Do not include API keys, passwords or credentials.'},
  {key:'starters',question:'Enter conversation starters, one per line (up to 12), or type none.'},
  {key:'tools',question:'Which capabilities / tool settings should be enabled? Choose web search, image generation, code interpreter, any combination, all, or none. Availability depends on the model.'},
- {key:'model',question:'Enter the OpenAI model ID, or type default to use the server’s OPENAI_MODEL setting. This app setting is separate from the server model used for setup.'},
+ {key:'model',question:'Choose Auto — cost-first to select an approved answer model for each turn, or Fixed — server default. You can also enter a specific OpenAI model ID, type auto, or type default. Auto requires a configured routing policy. This setting is separate from the server model used for setup.'},
  {key:'knowledge_files',question:'Choose your knowledge files in the upload panel, upload and index them, then select Use these files. You can select multiple documents. If your GPT has no knowledge files, type none.'},
  {key:'actions',question:'Type none, paste your Actions as a JSON array, or attach the actual JSON file. Each Action needs name, auth_type (none, api_key, oauth), and schema (an OpenAPI JSON object). Include definitions only, never credentials.\n\nExample:\n[{"name":"Lookup","auth_type":"none","schema":{"openapi":"3.1.0","info":{"title":"Lookup","version":"1.0"},"paths":{}}}]\n\nActions need reviewed backend adapters before execution.'}
 ];
 function setupMessage(text,role='assistant'){message({role,content:text})}
-function beginSetup(){clearChatFiles();resetKnowledge();closeHistory();wizard={step:0,draft:{},history:[]};sid=null;$('messages').replaceChildren();$('sessions').replaceChildren();$('name').textContent='Create an application';$('error').textContent='';setInput('');$('input').maxLength=1000000;$('apps').disabled=true;setupMessage('Tell me about your GPT. I’ll interpret your answers and ask when something is unclear; you’ll review everything before creating the app.');setupMessage(steps[0].question);updateChrome();$('input').focus()}
+function beginSetup(){routingClear();clearChatFiles();resetKnowledge();closeHistory();wizard={step:0,draft:{},history:[]};sid=null;$('messages').replaceChildren();$('sessions').replaceChildren();$('name').textContent='Create an application';$('error').textContent='';setInput('');$('input').maxLength=1000000;$('apps').disabled=true;setupMessage('Tell me about your GPT. I’ll interpret your answers and ask when something is unclear; you’ll review everything before creating the app.');setupMessage(steps[0].question);updateChrome();$('input').focus()}
 function previousSetupStep(){clearChatFiles();wizard.step=Math.max(0,wizard.step-1);wizard.history=[];updateChrome();setupMessage(steps[wizard.step].question)}
 async function cancelSetup(){if(current)await start();else emptyWorkspace()}
-function reviewDraft(){const d=wizard.draft;setupMessage('Review your application:\n\nName: '+d.name+'\nDescription: '+(d.description||'None')+'\nInstructions: '+d.instructions.length+' characters, preserved as entered\nStarters: '+(d.starters.join(' | ')||'None')+'\nCapabilities / tools: '+(d.tools.join(', ')||'None')+'\nModel: '+(d.model||'Server default')+'\nKnowledge files: '+(d.knowledge_files.join(', ')||'None')+'\nActions: '+(d.actions.map(a=>a.name+' ('+a.auth_type+')').join(', ')||'None')+'\n\nType create to save, back to revise Actions, or cancel to leave setup.');}
+function reviewDraft(){const d=wizard.draft;setupMessage('Review your application:\n\nName: '+d.name+'\nDescription: '+(d.description||'None')+'\nInstructions: '+d.instructions.length+' characters, preserved as entered\nStarters: '+(d.starters.join(' | ')||'None')+'\nCapabilities / tools: '+(d.tools.join(', ')||'None')+'\nModel: '+(d.model==='auto'?'Auto — cost-first':d.model||'Fixed — server default')+'\nKnowledge files: '+(d.knowledge_files.join(', ')||'None')+'\nActions: '+(d.actions.map(a=>a.name+' ('+a.auth_type+')').join(', ')||'None')+'\n\nType create to save, back to revise Actions, or cancel to leave setup.');}
 async function saveDraft(){
  const created=await api('/api/apps',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(wizard.draft)});
  apps=await api('/api/apps');$('apps').replaceChildren();
@@ -223,4 +233,4 @@ $('setup-cancel').onclick=()=>{if(!busy&&!knowledgeBusy)cancelSetup().catch(show
 $('history-toggle').onclick=()=>{const open=document.querySelector('aside').classList.toggle('history-open');$('history-toggle').setAttribute('aria-expanded',String(open));};
 initKnowledge();
 initChatAttachments();
-(async()=>{try{const config=await api('/api/config');$('release-info').textContent='Version '+config.version+' · Build '+config.build;builderEnabled=config.builder_enabled;chatFileLimits=config.chat_attachments||chatFileLimits;$('chat-files').accept=chatFileLimits.extensions.join(',');knowledgeLimits=config.knowledge_uploads||{};$('create').hidden=!config.builder_enabled;$('download').hidden=!config.builder_enabled;$('knowledge-open').hidden=!config.builder_enabled;apps=await api('/api/apps');for(const app of apps){const option=element('option',app.name);option.value=app.id;$('apps').append(option)}current=apps[0];if(!current){if(config.builder_enabled)beginSetup();else throw new Error('No applications configured.')}else{$('name').textContent=current.name;await start()}}catch(error){showError(error);$('send').disabled=true}})();
+(async()=>{try{const config=await api('/api/config');$('release-info').textContent='Version '+config.version+' · Build '+config.build;builderEnabled=config.builder_enabled;routingAvailable=config.routing_available===true;routingError=typeof config.routing_error==='string'?config.routing_error.slice(0,500):'';chatFileLimits=config.chat_attachments||chatFileLimits;$('chat-files').accept=chatFileLimits.extensions.join(',');knowledgeLimits=config.knowledge_uploads||{};$('create').hidden=!config.builder_enabled;$('download').hidden=!config.builder_enabled;$('knowledge-open').hidden=!config.builder_enabled;apps=await api('/api/apps');for(const app of apps){const option=element('option',app.name);option.value=app.id;$('apps').append(option)}current=apps[0];if(!current){if(config.builder_enabled)beginSetup();else throw new Error('No applications configured.')}else{$('name').textContent=current.name;await start()}}catch(error){showError(error);$('send').disabled=true}})();

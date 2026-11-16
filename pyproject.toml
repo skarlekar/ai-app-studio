@@ -21,4 +21,4 @@ version = {attr = "gptapps.version.VERSION"}
 gptapps = "gptapps.cli:main"
 
 [tool.setuptools.package-data]
-gptapps = ["chat.html", "chat.js", "knowledge.js", "attachments.js", "chat.css", "LICENSE", "templates/*", "templates/.dockerignore", "vendor/*", "icons/*"]
+gptapps = ["chat.html", "chat.js", "knowledge.js", "attachments.js", "routing.js", "routing.css", "chat.css", "LICENSE", "templates/*", "templates/.dockerignore", "vendor/*", "icons/*"]

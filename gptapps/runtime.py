@@ -5,6 +5,8 @@ import hashlib
 import http.client
 import json
 import os
+import re
+import time
 from pathlib import Path
 import sqlite3
 import threading
@@ -163,7 +165,7 @@ class OpenAIClient:
 
 
 class Runtime:
-    def __init__(self, data_dir, client=None, registry=None):
+    def __init__(self, data_dir, client=None, registry=None, decisions_client=None):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.assets = self.data_dir / "assets"
@@ -172,6 +174,7 @@ class Runtime:
         with closing(sqlite3.connect(self.db_path)) as db, db:
             db.execute("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, app_id TEXT, fingerprint TEXT, messages TEXT)")
         self.db_path.chmod(0o600)
+        self.decisions_client = decisions_client
         self.client = client or OpenAIClient()
         self.registry = registry or Registry()
         self.lock = threading.RLock()
@@ -199,7 +202,8 @@ class Runtime:
         blockers = [i["message"] for i in analyze(app)["issues"] if i["severity"] == "blocker"]
         if blockers:
             raise ValueError("Unresolved configuration: " + " ".join(blockers))
-        model = app["runtime"].get("model") or os.environ.get("OPENAI_MODEL")
+        policy=app['runtime'].get('routing')
+        model = policy['fallback_model'] if policy else app["runtime"].get("model") or os.environ.get("OPENAI_MODEL")
         if not model:
             raise ValueError("Set OPENAI_MODEL or runtime.model to an available model supporting the selected tools")
         tools = []
@@ -257,7 +261,7 @@ class Runtime:
         if not isinstance(message, str) or (not message.strip() and not files) or len(message) > 16000:
             raise ValueError("Message must contain 1–16000 characters")
         model, tools, allowed = self.configuration(app)
-        fingerprint = hashlib.sha256((json.dumps(app, sort_keys=True) + model).encode()).hexdigest()
+        fingerprint = hashlib.sha256((json.dumps(app, sort_keys=True) + ("" if app["runtime"].get("routing") else model)).encode()).hexdigest()
         with self.lock:
             history = []
             if session_id:
@@ -273,6 +277,20 @@ class Runtime:
             attachment_bytes=sum(item['size'] for m in history for item in m.get('attachments',[]))
             if attachment_bytes+sum(item['size'] for item in files)>MAX_ATTACHMENT_BYTES:
                 raise ValueError('Conversation attachment limit reached (20 MiB); start a new conversation')
+            if emit is not None:
+                emit({'type':'status','message':'Selecting an answer model…'})
+            if app['runtime'].get('routing'):
+                from .routing import ModelRouter
+                routing=ModelRouter(self.decisions_client).select(app,message,history,files,tools)
+                routing['mode']='auto';model=routing['requested_model']
+            else:
+                routing={'mode':'fixed','requested_model':model,'route':'fixed','task':'other',
+                         'router_model':None,'summary':'The application uses its configured fixed model.',
+                         'fallback':False,'reason_codes':['fixed_model'],'selection_ms':0}
+            # Callback checkpoint prevents starting Responses after a known disconnection.
+            if emit is not None:emit({'type':'routing','routing':copy.deepcopy(routing)})
+            answer_started=time.monotonic()
+            reported_model=None
             # Only the application developer config becomes instructions; user text/files remain user input.
             working = [{"role": m["role"], "content": input_content(m["content"],m.get('attachments',[]))} for m in history]
             working.append({"role": "user", "content": input_content(message,files)})
@@ -292,6 +310,9 @@ class Runtime:
                 if response.get("status") != "completed" and not length_limited:
                     raise ValueError(response_failure_message(response, payload["max_output_tokens"]))
                 usage.append(response.get("usage", {}))
+                value=response.get('model')
+                if isinstance(value,str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}',value) and not value.startswith('sk-'):
+                    reported_model=value
                 output = response.get("output", [])
                 calls = [item for item in output if item.get("type") == "function_call"]
                 if length_limited:
@@ -340,6 +361,17 @@ class Runtime:
                                  "assets": assets, "citations": citations}
                     if length_limited:
                         assistant["incomplete_reason"] = "max_output_tokens"
+                    routing['answer_ms']=max(0,round((time.monotonic()-answer_started)*1000))
+                    routing['answer_usage']={}
+                    for entry in usage:
+                        if not isinstance(entry,dict):continue
+                        for key in ('input_tokens','output_tokens','total_tokens'):
+                            number=entry.get(key)
+                            if type(number) is int and 0<=number<=10**12:
+                                routing['answer_usage'][key]=routing['answer_usage'].get(key,0)+number
+                    if reported_model:routing['reported_model']=reported_model
+                    assistant['routing']=copy.deepcopy(routing)
+                    if emit is not None:emit({'type':'routing','routing':copy.deepcopy(routing)})
                     user={"role": "user", "content": message}
                     if files:
                         user['attachments']=files

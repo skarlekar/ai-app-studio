@@ -11,7 +11,7 @@ def copy_runtime(destination):
     """Export known source/assets only, even when --data lives beneath this package."""
     package = Path(__file__).parent
     files = ["__init__.py", "version.py", "__main__.py", "build.py", "cli.py", "extensions.py", "runtime.py", "setup.py",
-             "spec.py", "web.py", "attachments.py", "attachments.js", "knowledge.py", "chat.html", "chat.js", "knowledge.js", "chat.css", "LICENSE"]
+             "spec.py", "web.py", "attachments.py", "attachments.js", "routing.py", "decisions.py", "routing.js", "routing.css", "knowledge.py", "chat.html", "chat.js", "knowledge.js", "chat.css", "LICENSE"]
     files += ["templates/" + name for name in ("start.sh", "docker-start.sh", "launcher-common.sh", "docker-entrypoint.sh", "Dockerfile", ".dockerignore")]
     files += ["vendor/" + name for name in ("marked.umd.js", "purify.min.js", "marked-LICENSE.txt", "dompurify-LICENSE.txt", "README.md")]
     files += ["icons/" + name for name in ("plus.svg", "download.svg", "history.svg", "arrow-up.svg", "arrow-up-right.svg", "chevron-down.svg", "lock-keyhole.svg", "layers.svg", "LICENSE.txt", "README.md")]
@@ -58,6 +58,30 @@ def standalone_readme(app):
 its own backend, web interface, configuration, and launchers. You do not need the
 original framework folder or access to the original GPT in ChatGPT.
 
+## Model routing and status
+
+An Auto app embeds its approved routing policy in `app.json`. It calls OpenAI
+Decisions API (`/v1/decisions`) to choose an eligible answering model, then uses
+Responses API (`/v1/responses`) to generate and stream the answer. The **Routing status** panel in the left sidebar, below **Recent Conversations**,
+shows the requested/provider-reported model, a short rule-based
+selection explanation, fallback and separate router/answer usage. Saved turns
+retain this information. On narrow screens, open **Conversations and routing** in
+the header to view it. Fixed-model apps continue to use their configured model.
+
+No external routing-policy file or `OPENAI_MODEL` default is required for an
+exported Auto app. Set its usual `OPENAI_API_KEY` and ensure every configured
+candidate and the router model are available to that OpenAI project. The launchers
+read the embedded fallback model and do not prompt for an unused fixed default.
+Changing the embedded policy requires restarting and beginning a new conversation.
+
+Routing uses the request, recent history, file metadata and bounded readable text.
+PDF/Office/image contents are not extracted for routing; the answering model still
+receives the original files. Cost ranks are configured expectations, not live
+prices or a promise of savings. See the policy and README in the framework for
+capability/cost verification before real use. Timeout/invalid decisions can use
+the configured compatible fallback; authentication, refusal and quota errors
+remain visible. The app never automatically pays for another generated answer.
+
 ## Chat attachments
 
 Use **Attach files** beside the message box or drag files into the chat. Review
@@ -74,7 +98,7 @@ turns, which can increase input-token costs. Session UI endpoints return metadat
 only. Keep the local data directory private; history is not encrypted at rest.
 Failed requests retain your draft and selected files for retry. A new conversation
 clears unsent attachments. Existing generated apps need a fresh export to receive
-this feature. The version and export build number appear below the composer.
+this feature. The version and export build number appear at the bottom left.
 
 ## Chat rendering
 

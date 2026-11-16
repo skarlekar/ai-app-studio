@@ -15,10 +15,14 @@ if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
   exit 1
 fi
 docker build --tag "$IMAGE" "$FRAMEWORK_ROOT"
+ROUTING_ARGS=(--env "GPTAPPS_PORT=$PORT")
+if [[ -n "${OPENAI_ROUTING_POLICY_FILE:-}" ]]; then
+  ROUTING_ARGS+=(--volume "$OPENAI_ROUTING_POLICY_FILE:/config/routing-policy.json:ro" --env "OPENAI_ROUTING_POLICY_FILE=/config/routing-policy.json")
+fi
 docker run --detach --rm --init --name "$CONTAINER" \
   --user "$(id -u):$(id -g)" --publish "127.0.0.1:$PORT:$PORT" \
   --env OPENAI_API_KEY --env OPENAI_MODEL --env OPENAI_SETUP_MODEL \
-  --env "GPTAPPS_PORT=$PORT" \
+  "${ROUTING_ARGS[@]}" \
   --volume "$APPS_DIR:/data/apps" --volume "$DATA_DIR:/data/runtime" \
   "$IMAGE" >/dev/null
 LOG_PID=""

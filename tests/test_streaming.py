@@ -176,7 +176,9 @@ class StreamingHTTPTests(unittest.TestCase):
     def test_http_flushes_text_before_provider_completion_and_commits_only_afterwards(self):
         with request(self.base, "/api/chat", {"app_id": self.app_id, "message": "gated-stream", "stream": True}) as stream:
             self.assertIn("text/event-stream", stream.headers["Content-Type"])
-            events = sse_events(stream)
+            # Routing/status metadata may precede text. The first answer chunk
+            # must still flush before provider completion or a database commit.
+            events = (event for event in sse_events(stream) if event.get('type') not in ('status','routing'))
             self.assertEqual(next(events)["type"], "reset")
             self.assertEqual(next(events)["delta"], "First chunk. ")
             self.assertFalse(self.gate.exists())

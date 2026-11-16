@@ -1,13 +1,13 @@
 # Cost-first, attachment-aware model routing
 
-Status: proposed design for user review. No router implementation is included.
+Status: approved by the user on 2026-11-15; implemented in public release 0.2.0.
 Repository: public `skarlekar/ai-app-studio`; the private edition is outside this change.
 
 ## Intent and agreed requirements
 
 Select an appropriate model for each application chat request to reduce overall API cost. The user accepts some answer-quality variation in exchange for greater savings. Requests can include attached documents. Routing uses the request, conversation context, file metadata and readily available text (approach1). The framework must show the model used and a short explanation in a status section. Generated standalone applications inherit the feature.
 
-The decisions below that were not specified by the user are proposed defaults, not previously approved requirements.
+The approved defaults below guide the implementation; model access, capability declarations and cost ranks still require operator review for real workloads.
 
 ## Approaches considered
 
@@ -26,7 +26,7 @@ The decisions below that were not specified by the user are proposed defaults, n
 
 ## Configuration and adoption
 
-**Proposed:** creation offers Fixed model and Auto — cost-first in the model step. Existing/imported apps remain fixed unless their owner enables Auto. No app silently replaces an explicitly selected model.
+Creation offers Fixed model and Auto — cost-first in the model step. Existing/imported apps remain fixed unless their owner enables Auto. No app silently replaces an explicitly selected model.
 
 The operator supplies a validated, nonsecret candidate policy through a local JSON configuration file. On selecting Auto, the builder embeds a validated snapshot in the application's optional `runtime.routing` settings. JSON imports can supply the same settings. Standalone exports carry this snapshot; they do not depend on the framework or its original configuration path.
 
@@ -38,7 +38,7 @@ Missing, malformed or incompatible Auto configuration is an actionable configura
 
 ## Routing evidence
 
-The router considers the current request and the conversation, not just the latest sentence. Proposed evidence budget:
+The router considers the current request and the conversation, not just the latest sentence. Evidence budget:
 
 - Full current user text within the existing16000-character limit.
 - App purpose/instructions as task evidence, capped at8000 characters.
@@ -57,13 +57,13 @@ The answering model receives the original complete request, full retained conver
 3. If no candidate is eligible, return an actionable error before any model call. If only one is eligible, use it without a redundant Decisions request and explain that rule in status.
 4. Otherwise call `POST /v1/decisions` once. Current documented router model: `gpt-6-luna`. In one request ask two independent fixed-choice questions: required effort (economy/balanced/advanced/uncertain), and task category (extraction/summary/transformation/explanation/reasoning/coding/other). Dedicated routing instructions stay separate from untrusted app text, conversation and excerpts. The classifier cannot supply arbitrary model IDs, change credentials or override the candidate policy.
 5. Validate typed answers and probabilities. Map the effort to the lowest-cost-ranked eligible candidate meeting that tier. Cost rank breaks ties within the required capability tier; use a stable model-ID tie break. If the requested tier has no eligible candidate, use the configured compatible fallback rather than guessing an unapproved model.
-6. Proposed initial uncertainty rule: selected effort probability below0.65 or `uncertain` uses the configured compatible balanced fallback. This is a tunable policy threshold, not a calibrated answer-quality probability. Evaluate it on representative requests before claiming savings/quality levels.
+6. Initial uncertainty rule: selected effort probability below0.65 or `uncertain` uses the configured compatible balanced fallback. This is a tunable policy threshold, not a calibrated answer-quality probability. Evaluate it on representative requests before claiming savings/quality levels.
 7. Pin the selected answering model for the entire user turn, including function-call rounds. Reconsider on the next user turn, preserving full retained conversation.
 8. Generate and stream the answer through the existing Responses client; save the turn plus bounded routing metadata only after the existing successful/usable-partial completion rules pass.
 
 ## Routing failures
 
-Proposed router timeout:2 seconds, configurable within0.5–10 seconds. A transient router timeout/connection/5xx error uses the configured compatible fallback once and marks the routing reason accurately. An invalid answer or unsupported category uses the same explicit fallback with an invalid-decision reason.
+Router timeout:2 seconds, configurable within0.5–10 seconds. A transient router timeout/connection/5xx error uses the configured compatible fallback once and marks the routing reason accurately. An invalid answer or unsupported category uses the same explicit fallback with an invalid-decision reason.
 
 A Decisions refusal, authentication/permission failure, or exhausted billing/quota is surfaced explicitly rather than treated as a successful classification. Do not cycle models for exhausted quota. Final Responses failures retain existing actionable diagnostics; do not automatically replay a turn after streamed text or executed tools. No automatic second-answer escalation in this release.
 
@@ -71,13 +71,13 @@ Cancellation/disconnection during routing must prevent starting an answer reques
 
 ## Conversation compatibility
 
-Current `runtime.py` fingerprints the app together with its selected model. Under Auto, fingerprint the app and routing-policy snapshot, excluding the model chosen for an individual turn. Fixed mode keeps its existing fingerprint behavior, including protection against changed environment defaults. Changing app instructions or the policy still requires a new conversation. Enabling Auto on an existing app starts new conversations; no database rewrite is required.
+Fixed mode fingerprints the app together with its selected model. Under Auto, the fingerprint uses the app and routing-policy snapshot, excluding the model chosen for an individual turn. Fixed mode keeps its existing fingerprint behavior, including protection against changed environment defaults. Changing app instructions or the policy still requires a new conversation. Enabling Auto on an existing app starts new conversations; no database rewrite is required.
 
 Saved assistant messages gain a bounded optional routing record. Legacy messages without it still load. Routing metadata is not replayed as user instructions or answering-model content.
 
 ## Routing status and history
 
-Show an accessible Routing status section near chat status, with compact default content and expandable details. Keep the existing bottom-left application version/build label separate.
+Show an accessible Routing status section in the left sidebar below Recent Conversations, with compact default content and expandable details. On narrow screens the Conversations and routing header button reveals the section, keeping the composer available. This placement was requested by the user during verification. Keep the existing bottom-left application version/build label separate.
 
 Always distinguish the answer model from the Decisions router model. Show selecting-model progress, chosen answer API model ID, route, short explanation and fallback status. After completion use the model ID reported by Responses if present; otherwise label it as the requested model ID rather than claiming an unreported identity. Validate/bound provider model IDs before display.
 
@@ -102,3 +102,9 @@ Module/function names, bounded metadata schema, status styling, validation helpe
 ## Official API references
 
 Checked2026-11-15: [Decisions guide](https://developers.openai.com/api/docs/guides/decisions) and [create decision reference](https://developers.openai.com/api/reference/python/resources/decisions/methods/create). Decisions supports typed choices and conversation evidence, with file inputs excluded; the application's extraction boundary above is deliberate. Recheck provider access/capabilities before live implementation tests.
+
+## Release verification — 2026-11-15
+
+Implemented with Python standard-library modules and locally bundled JavaScript; no runtime dependency added. Independent review found no important issues. All 141 Python tests (including real Docker launcher/export checks), 24 Node checks, and wheel packaging pass. Offline browser checks cover Studio and a fresh standalone export, saved history, model changes, timeout fallback, sidebar placement/details and a 390-pixel mobile view. Provider calls were replaced by recording test clients; synthetic TXT/PDF files verify original answering inputs and metadata-only binary routing. No real OpenAI request, private document upload or measured savings claim was made.
+
+Verification also caught and resolved the macOS Bash 3.2 empty-array launcher issue. Existing stream assertions now permit routing metadata before the first text delta while retaining the original early-text/save-atomicity checks. The final browser placement keeps routing and version/build information separate.

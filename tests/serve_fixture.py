@@ -96,7 +96,7 @@ print("¡Hola!")
                     "usage": {"output_tokens": payload["max_output_tokens"]},
                     "output": [{"type": "message", "role": "assistant", "status": "incomplete", "content": [
                         {"type": "output_text", "text": "### A detailed answer\n\nThis is the **saved first part** of a longer explanation.\n\n1. Start with a clear goal.\n2. Break the work into manageable steps.", "annotations": []}]}]}
-        return {"status": "completed", "output": [{"type": "message", "content": [
+        return {"status": "completed", "model":payload["model"], "usage":{"input_tokens":120,"output_tokens":40,"total_tokens":160}, "output": [{"type": "message", "content": [
             {"type": "output_text", "text": answer,
              "annotations": [{"type": "url_citation", "title": "Example source", "url": "https://example.com"}]}]}]}
 
@@ -158,6 +158,20 @@ class FakeKnowledgeClient:
                                 "failed": int(broken), "cancelled": 0}}
 
 
-web.Runtime = lambda data_dir, registry=None: Runtime(data_dir, FakeClient(), registry)
+class FakeDecisions:
+    def create(self,payload,timeout=2):
+        capture=os.environ.get('GPTAPPS_CAPTURE_DECISION')
+        if capture:Path(capture).write_text(json.dumps(payload))
+        data=json.loads(payload['input'])
+        text=data['current_request']
+        if text=='router-timeout':
+            from gptapps.decisions import DecisionsUnavailable
+            raise DecisionsUnavailable('Synthetic timeout')
+        from_values=[['economy','balanced','advanced','uncertain'],['extraction','summary','transformation','explanation','reasoning','coding','other']]
+        selected=['advanced' if 'complex' in text.lower() else 'economy','summary']
+        return {'model':'gpt-6-luna','answers':[{'type':'choice','name':name,'choice':value,'probabilities':[{'value':option,'probability':1.0 if option==value else 0.0} for option in values]} for name,value,values in zip(['effort','task'],selected,from_values)],'usage':{'input_tokens':80,'output_tokens':0,'total_tokens':80}}
+
+
+web.Runtime = lambda data_dir, registry=None: Runtime(data_dir, FakeClient(), registry, decisions_client=FakeDecisions())
 web.KnowledgeManager = lambda data_dir: KnowledgeManager(data_dir, FakeKnowledgeClient(data_dir))
 web.serve(Path(sys.argv[1]), Path(sys.argv[2]), int(sys.argv[3]), builder="--standalone" not in sys.argv)

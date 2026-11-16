@@ -13,7 +13,7 @@ FIELDS = {
     "instructions": "The full GPT instructions, preserved verbatim.",
     "starters": "Conversation starters. Extract explicitly supplied starters from lists or conversational phrasing; absence means an empty list.",
     "tools": "Enabled capabilities: web_search, image_generation, code_interpreter. Interpret synonyms, combinations, all, only, and exclusions. For example 'web search but no images' means only web_search. Absence means an empty list.",
-    "model": "An exact API model ID supplied by the user, or null for the server default. 'Use the default model' means null. Never invent, recommend, or guess a model ID. Ask if the user requests a recommendation.",
+    "model": "An exact API model ID supplied by the user, or null for the server default. 'Use the default model' means null. Explicit Auto/cost-first routing means the exact string auto; the server validates its configured policy. Never invent, recommend, or guess a model ID. Ask if the user requests a recommendation.",
     "knowledge_files": "An inventory of explicitly supplied knowledge filenames. 'No knowledge files needed', 'I don't have any files', and equivalent absence statements mean an empty list. Never treat a sentence declaring absence as a filename. Do not invent files or infer them from the application's purpose. If files exist but filenames are missing, direct the user to the knowledge upload panel. Ask if the reply is uncertain. The panel handles actual upload/indexing separately.",
     "actions": "Credential-free Action definitions. Absence statements such as 'I don't have any actions' mean an empty list. Existing Actions need their actual name, auth_type (none/api_key/oauth), and OpenAPI schema. Never invent Actions or schemas from a description; ask for missing definitions. Represent each complete schema as a JSON string in schema_json.",
     "review": "The user is reviewing their completed draft. Only an explicit instruction to save/create it (including 'looks good, go ahead') means create. Questions, uncertainty, or requested changes require clarification. Explain that back returns to Actions and earlier steps. Do not save automatically.",
@@ -61,7 +61,7 @@ def validated_value(field, value):
     # Return canonical values, including the server's empty-inventory normalization.
     return {"name": app["name"], "description": app["description"],
             "instructions": app["instructions"], "starters": app["conversation_starters"],
-            "tools": app["runtime"]["hosted_tools"], "model": app["runtime"]["model"],
+            "tools": app["runtime"]["hosted_tools"], "model": "auto" if app["runtime"].get("routing") else app["runtime"]["model"],
             "knowledge_files": app["requirements"]["knowledge_files"],
             "actions": value}[field]
 
@@ -83,6 +83,8 @@ class SetupInterpreter:
             or len(m["content"]) > 16000 for m in history
         ):
             raise ValueError("Invalid setup clarification history; go back and try again")
+        if field=='model' and message.strip().casefold()=='auto' and not files:
+            return {'status':'accept','value':validated_value(field,'auto'),'message':'Auto cost-first routing selected; the configured model policy will be embedded.'}
         # Instructions and actual schemas must never be rewritten by a model.
         if files and field=='instructions':
             message='\n\n'.join(part for part in (message,exact_text(files)) if part)

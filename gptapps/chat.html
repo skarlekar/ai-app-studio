@@ -4,6 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>App Studio</title>
 <link rel="stylesheet" href="/static/chat.css">
+<link rel="stylesheet" href="/static/routing.css">
 </head>
 <body>
 <aside aria-label="Workspace sidebar">
@@ -13,10 +14,11 @@
  <button id="new"><span class="icon icon-plus" aria-hidden="true"></span><span>New conversation</span></button>
  <div class="section-heading history-heading"><div class="eyebrow">Recent conversations</div><span class="history-count" aria-hidden="true"></span></div>
  <nav id="sessions" aria-label="Saved conversations"></nav>
+ <section id="routing-status" class="routing-status" aria-labelledby="routing-title" hidden><div class="routing-heading"><h2 id="routing-title">Routing status</h2><span id="routing-state" role="status" aria-live="polite"></span></div><p id="routing-model"></p><p id="routing-route"></p><p id="routing-summary"></p><details id="routing-details" hidden><summary>Routing details</summary><dl id="routing-detail-list"></dl></details></section>
  <div id="local"><span class="icon icon-lock-keyhole" aria-hidden="true"></span><span>History saved on this device.</span></div>
 </aside>
 <main>
- <header><div class="header-identity"><div id="header-mark" class="app-mark" aria-hidden="true">✦</div><div><div class="header-eyebrow" id="header-eyebrow">YOUR WORKSPACE</div><div id="name">App Studio</div></div></div><div class="header-tools"><button id="history-toggle" type="button" aria-label="Show conversations" title="Conversations" aria-controls="sessions" aria-expanded="false"><span class="icon icon-history" aria-hidden="true"></span></button><span id="mode">Workspace</span><div id="status" role="status" aria-live="polite" data-state="ready">Ready</div></div></header>
+ <header><div class="header-identity"><div id="header-mark" class="app-mark" aria-hidden="true">✦</div><div><div class="header-eyebrow" id="header-eyebrow">YOUR WORKSPACE</div><div id="name">App Studio</div></div></div><div class="header-tools"><button id="history-toggle" type="button" aria-label="Show conversations and routing status" title="Conversations and routing" aria-controls="sessions routing-status" aria-expanded="false"><span class="icon icon-history" aria-hidden="true"></span></button><span id="mode">Workspace</span><div id="status" role="status" aria-live="polite" data-state="ready">Ready</div></div></header>
  <section id="knowledge-panel" class="knowledge-panel" aria-labelledby="knowledge-title" hidden>
   <div class="knowledge-heading"><div><div class="eyebrow">YOUR KNOWLEDGE</div><h2 id="knowledge-title">Add knowledge files</h2></div><button id="knowledge-close" type="button">Back to chat</button></div>
   <p id="knowledge-description">Select documents to upload and index in your OpenAI project.</p>
@@ -35,12 +37,13 @@
   <p id="knowledge-retention" class="knowledge-help">Files are sent to OpenAI using your API account. Storage and usage charges may apply. Uploads stay in your OpenAI project if you cancel setup.</p>
  </div>
  <div id="messages" aria-live="polite"></div>
- <footer><div id="setup-controls" class="setup-controls" hidden><div class="setup-nav"><button id="setup-back" type="button">Back</button><button id="setup-cancel" type="button">Cancel setup</button></div><span>AI setup uses your OpenAI API account.</span></div><p id="error" role="alert"></p><form id="form"><div class="chat-attachments"><ul id="chat-file-list" aria-label="Attached files" aria-live="polite"></ul><p id="chat-attachment-help" hidden>These files will be sent to OpenAI with your message. They are chat context, not permanent knowledge files.</p></div><div class="composer"><button id="chat-attach" type="button" aria-label="Attach files" title="Attach files or drop them into this chat"><span class="icon icon-plus" aria-hidden="true"></span><span class="sr-only">Attach files</span></button><input id="chat-files" type="file" multiple hidden aria-label="Choose chat attachments"><textarea id="input" aria-label="Message" placeholder="Start a conversation…" maxlength="16000" rows="1" required></textarea><button id="send" type="submit" aria-label="Send message"><span>Send</span><span class="icon icon-arrow-up" aria-hidden="true"></span></button></div></form><div id="note"><span>Drop files into chat · <span class="key-hint">⇧ ↵</span>Shift + Enter for a new line</span><span>AI can make mistakes. Check important details.</span></div></footer>
+ <footer><div id="setup-controls" class="setup-controls" hidden><div class="setup-nav"><button id="setup-back" type="button">Back</button><button id="setup-cancel" type="button">Cancel setup</button></div><span>AI setup uses your OpenAI API account.</span></div><div id="model-choices" class="model-choices" hidden><div class="model-choice-buttons"><button id="model-auto" type="button" aria-describedby="model-routing-help">Auto — cost-first</button><button id="model-fixed" type="button" aria-describedby="model-routing-help">Fixed — server default</button></div><p id="model-routing-help"></p></div><p id="error" role="alert"></p><form id="form"><div class="chat-attachments"><ul id="chat-file-list" aria-label="Attached files" aria-live="polite"></ul><p id="chat-attachment-help" hidden>These files will be sent to OpenAI with your message. They are chat context, not permanent knowledge files.</p></div><div class="composer"><button id="chat-attach" type="button" aria-label="Attach files" title="Attach files or drop them into this chat"><span class="icon icon-plus" aria-hidden="true"></span><span class="sr-only">Attach files</span></button><input id="chat-files" type="file" multiple hidden aria-label="Choose chat attachments"><textarea id="input" aria-label="Message" placeholder="Start a conversation…" maxlength="16000" rows="1" required></textarea><button id="send" type="submit" aria-label="Send message"><span>Send</span><span class="icon icon-arrow-up" aria-hidden="true"></span></button></div></form><div id="note"><span>Drop files into chat · <span class="key-hint">⇧ ↵</span>Shift + Enter for a new line</span><span>AI can make mistakes. Check important details.</span></div></footer>
 </main>
 <small id="release-info" aria-label="Application version and build"></small>
 <script src="/static/vendor/marked.umd.js"></script>
 <script src="/static/vendor/purify.min.js"></script>
 <script src="/static/knowledge.js"></script>
 <script src="/static/attachments.js"></script>
+<script src="/static/routing.js"></script>
 <script src="/static/chat.js"></script>
 </body></html>

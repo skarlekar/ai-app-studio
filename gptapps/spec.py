@@ -29,6 +29,13 @@ def validate(app):
         raise ValueError("This runtime supports the Responses API")
     if runtime.get("model") is not None and not isinstance(runtime["model"], str):
         raise ValueError("model must be a string or null")
+    if runtime.get('routing') is not None:
+        from .routing import validate_policy
+        validate_policy(runtime['routing'])
+        if runtime.get('model') is not None:
+            raise ValueError('Auto routing requires runtime.model=null; select Fixed or Auto explicitly')
+    if runtime.get('model')=='auto':
+        raise ValueError('Auto requires an embedded routing policy; use the builder model step')
     schema = runtime.get("output_schema")
     if schema is not None and (not isinstance(schema, dict) or schema.get("type") != "object"):
         raise ValueError("output_schema must be an object JSON Schema or null")
@@ -199,6 +206,11 @@ def from_chat_input(draft):
              "knowledge": {"files": files}, "actions": {"count": len(definitions)}}
     app = import_export({"gpts": [entry]})[0]
     app["source"]["type"] = "conversational_setup"
-    app["runtime"]["model"] = model
+    if isinstance(model,str) and model.strip().casefold()=='auto':
+        from .routing import load_policy_file
+        app['runtime']['routing']=load_policy_file()
+        app['runtime']['model']=None
+    else:
+        app["runtime"]["model"] = model
     app["action_definitions"] = definitions
     return validate(app)

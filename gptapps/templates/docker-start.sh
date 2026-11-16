@@ -18,7 +18,7 @@ CONFIGURED_MODEL=""
 if [[ -z "${OPENAI_MODEL:-}" ]]; then
   CONFIGURED_MODEL="$(docker run --rm --user "$(id -u):$(id -g)" \
     --volume "$FRAMEWORK_ROOT/app.json:/config/app.json:ro" "$IMAGE" \
-    python -c 'from gptapps.spec import load; print(load("/config/app.json")["runtime"].get("model") or "")')"
+    python -c 'from gptapps.spec import load; print(load("/config/app.json")["runtime"].get("model") or (load("/config/app.json")["runtime"].get("routing") or {}).get("fallback_model") or "")')"
 fi
 launcher_credentials "$CONFIGURED_MODEL"
 docker run --detach --rm --init --name "$CONTAINER" \

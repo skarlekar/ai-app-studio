@@ -34,7 +34,9 @@ def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="12
     setup = SetupInterpreter(client=runtime.client) if builder else None
     knowledge = KnowledgeManager(data_dir) if builder else None
     html = Path(__file__).with_name("chat.html").read_bytes()
-    static = {"/static/attachments.js": Path(__file__).with_name("attachments.js"),
+    static = {"/static/routing.js": Path(__file__).with_name("routing.js"),
+              "/static/routing.css": Path(__file__).with_name("routing.css"),
+              "/static/attachments.js": Path(__file__).with_name("attachments.js"),
               "/static/chat.js": Path(__file__).with_name("chat.js"),
               "/static/knowledge.js": Path(__file__).with_name("knowledge.js"),
               "/static/chat.css": Path(__file__).with_name("chat.css"),
@@ -86,6 +88,12 @@ def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="12
                 config = {"builder_enabled": builder, **build_info(), "chat_attachments": {"max_files": CHAT_MAX_FILES,
                     "max_file_bytes": CHAT_MAX_FILE_BYTES,"max_total_bytes": CHAT_MAX_TOTAL_BYTES,"extensions": CHAT_EXTENSIONS}}
                 if builder:
+                    try:
+                        from .routing import load_policy_file
+                        load_policy_file();config['routing_available']=True
+                    except (ValueError,OSError):
+                        config['routing_available']=False
+                        config['routing_error']='Auto routing needs a valid server model policy. See the README routing setup.'
                     config["knowledge_uploads"] = {"max_files": MAX_FILES, "max_file_bytes": MAX_FILE_BYTES,
                                                    "max_total_bytes": MAX_TOTAL_BYTES, "extensions": EXTENSIONS}
                 return self.send(200, config)

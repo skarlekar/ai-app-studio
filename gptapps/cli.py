@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 from pathlib import Path
 
 from .extensions import Registry
@@ -21,6 +22,7 @@ def main():
     server = sub.add_parser("serve", help="Run the local chat application")
     server.add_argument("--apps", required=True, type=Path)
     server.add_argument("--data", type=Path, default=Path(".gptapps-data"))
+    server.add_argument("--routing-policy", type=Path, help="Validated server policy used when creating Auto apps")
     server.add_argument("--port", type=int, default=8765)
     server.add_argument("--host", choices=("127.0.0.1", "0.0.0.0"), default="127.0.0.1",
                         help="Bind address; use 0.0.0.0 inside a locally published container")
@@ -51,6 +53,10 @@ def main():
             registry = Registry()
             for reference in args.extension:
                 registry.load(reference)
+            if args.routing_policy is not None:
+                os.environ["OPENAI_ROUTING_POLICY_FILE"]=str(args.routing_policy.resolve())
+                from .routing import load_policy_file
+                load_policy_file()
             serve(args.apps, args.data, args.port, registry, builder=args.builder, host=args.host)
         elif args.command == "build":
             from .build import build_app

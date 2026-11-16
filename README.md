@@ -19,9 +19,11 @@ Explore the [AI App Studio companion page](https://ai-app-studio-introduction.pe
 - [Quick start](#quick-start)
 - [Run with Docker](#run-with-docker)
 - [Configuration](#configuration)
+- [Auto — cost-first routing](#auto--cost-first-routing)
 - [Ways to use the framework](#ways-to-use-the-framework)
 - [Run a generated application](#run-a-generated-application)
 - [Architecture](#architecture)
+- [Attach files to chat](#attach-files-to-chat)
 - [OpenAI APIs and tools](#openai-apis-and-tools)
 - [Application format](#application-format)
 - [Knowledge files and Actions](#knowledge-files-and-actions)
@@ -37,7 +39,15 @@ Explore the [AI App Studio companion page](https://ai-app-studio-introduction.pe
 
 ## Release notes
 
-### 0.1.2 — 2026-11-13 (latest)
+### 0.2.0 — 2026-11-15 (latest)
+
+- **Optional Auto — cost-first routing:** choose an approved answer model for each app-chat turn from an operator-reviewed policy. Existing apps keep their fixed-model behavior. The setup interpreter still uses its configured setup model.
+- **Attachment-aware selection:** classify bounded conversation/app text, attachment metadata and available UTF-8 excerpts with Decisions; stream the answer and tools through Responses with the original full inputs. Binary documents and images supply metadata only to the routing pass.
+- **Sidebar routing status:** below Recent Conversations, show the answer model, route, short rule-based explanation and fallback reason; expand details for the separate router model, evidence coverage, timings and router/answer usage. Successful saved turns retain this information.
+- **Portable Auto apps:** generated apps include the validated policy snapshot, routing runtime and status UI. They need an API key with the required model/tool access, but do not need the original policy file or an `OPENAI_MODEL` setting.
+- **Configuration release:** the new optional `runtime.routing` setting, policy-file configuration and routing status events extend the public contract, so this release advances to 0.2.0. See [Auto — cost-first routing](#auto--cost-first-routing) for setup, cost reasoning and limits.
+
+### 0.1.2 — 2026-11-13
 
 - **Bottom-left version and build label:** the framework and generated standalone apps keep their release identifier visible at the bottom-left corner. Desktop placement sits below the sidebar history notice; mobile placement reserves space beneath the chat controls.
 - **Release documentation:** this README now records release highlights and upgrade instructions.
@@ -60,7 +70,8 @@ Explore the [AI App Studio companion page](https://ai-app-studio-introduction.pe
 | JSON import | Normalizes a supported owner-provided export into a versioned application manifest |
 | Compatibility checks | Separates blocking dependencies from suggestions for behavior review |
 | Standalone builds | Packages one app with its backend, web UI, configuration, and compatibility report |
-| Chat | Streams live responses and renders Markdown, with local conversations, citations, generated images, and selected hosted tools |
+| Chat | Streams live responses and renders Markdown, with local conversations, attachments, citations, generated images, and selected hosted tools |
+| Optional model routing | Selects a policy-approved answer model per turn, with visible reasons and separate routing/answer usage |
 | Knowledge files | Uploads multiple selected documents to OpenAI, indexes a vector store, and binds a fully ready collection to an app |
 | Backend extensions | Calls explicitly registered, read-only Python functions |
 | Local and Docker launchers | Starts the builder, waits for readiness, and opens the correct browser URL |
@@ -108,7 +119,7 @@ Choose **Create application** and provide:
 2. Full GPT instructions.
 3. Conversation starters.
 4. Enabled capabilities: web search, image generation, and/or code interpreter.
-5. App model ID, or the server default.
+5. Fixed app model ID/server default, or **Auto — cost-first** when a routing policy is configured.
 6. Knowledge filenames, if any.
 7. Action definitions, if any.
 8. A final review and instruction to create the app.
@@ -120,7 +131,8 @@ You can answer naturally:
 | Name | “Call it Spanish Teacher” | Extracts the application name |
 | Starters | “No conversation starters needed” | Empty starter list |
 | Tools | “Enable web search but no images or code” | Web search only |
-| Model | “Use the default model” | Uses the server's app model |
+| Model | “Use the default model” | Uses the server's fixed app model |
+| Model | `auto` or the **Auto — cost-first** button | Embeds the configured routing policy for per-turn model selection |
 | Knowledge | “I don't have any knowledge files” | Empty inventory; no vector store needed |
 | Actions | “No actions are required” | Empty Action list |
 | Ambiguous reply | “I'm not sure about files” | Asks a follow-up without advancing |
@@ -138,6 +150,7 @@ The guided setup also provides Back and Cancel setup buttons near the composer. 
 ./start.sh --port 9000
 ./start.sh --apps migrated/apps
 ./start.sh --apps apps --data .gptapps-data --no-browser
+./start.sh --routing-policy examples/routing-policy.example.json
 ./start.sh --help
 ```
 
@@ -156,6 +169,7 @@ The Docker launcher prompts for missing settings, builds the image, starts the b
 ```sh
 ./docker-start.sh --port 9000
 ./docker-start.sh --apps migrated/apps --no-browser
+./docker-start.sh --routing-policy examples/routing-policy.example.json
 ./docker-start.sh --help
 ```
 
@@ -166,6 +180,7 @@ The Docker launcher prompts for missing settings, builds the image, starts the b
 | Application manifests | Host `apps/` mounted at `/data/apps` |
 | Conversations and generated images | Host `.gptapps-data/` mounted at `/data/runtime` |
 | API credentials | Passed from the launcher's environment; excluded from image builds |
+| Optional routing policy | Operator-selected host JSON mounted read-only at `/config/routing-policy.json` |
 | Browser access | Host `127.0.0.1:PORT`, published to the same container port |
 
 App configurations and history survive container removal because they are bind-mounted from the host. The launcher runs the container with your host user/group IDs to keep these files usable outside Docker. The image itself defaults to a non-root numeric user. `GPTAPPS_DOCKER_IMAGE` and `GPTAPPS_CONTAINER_NAME` can override the default image tag and container name.
@@ -193,8 +208,9 @@ The Docker build copies only the runtime source, public example, entrypoint, and
 | Environment variable | Purpose | Default |
 | --- | --- | --- |
 | `OPENAI_API_KEY` | Server-side OpenAI project key | Required for live AI requests |
-| `OPENAI_MODEL` | Default model for converted apps; fallback model for setup | No hardcoded model |
+| `OPENAI_MODEL` | Default model for fixed apps; fallback model for setup | No hardcoded model |
 | `OPENAI_SETUP_MODEL` | Separate model for interpreting setup replies; must support Structured Outputs | `OPENAI_MODEL` |
+| `OPENAI_ROUTING_POLICY_FILE` | Reviewed JSON policy to offer Auto during creation; `--routing-policy FILE` sets it | Unset; fixed mode remains available |
 | `GPTAPPS_PORT` | Port used by either launcher | `8765` |
 | `GPTAPPS_APPS_DIR` | Launcher app catalog directory | `apps/` under the framework root |
 | `GPTAPPS_DATA_DIR` | Launcher conversation/asset directory | `.gptapps-data/` under the framework root |
@@ -204,7 +220,7 @@ The Docker build copies only the runtime source, public example, entrypoint, and
 
 ### Model examples
 
-`OPENAI_MODEL` powers conversations in converted apps. `OPENAI_SETUP_MODEL` interprets the framework's setup replies, so it can usually be a smaller, less expensive model. These are starting points to evaluate with your own GPTs:
+`OPENAI_MODEL` powers fixed-model conversations in converted apps. `OPENAI_SETUP_MODEL` interprets the framework's setup replies, so it can usually be a smaller, less expensive model. These are starting points to evaluate with your own GPTs:
 
 | Use case | `OPENAI_MODEL` | `OPENAI_SETUP_MODEL` |
 | --- | --- | --- |
@@ -233,11 +249,68 @@ export OPENAI_SETUP_MODEL="gpt-6-luna"
 
 To use one model for both roles, set `OPENAI_MODEL` and leave `OPENAI_SETUP_MODEL` unset. During conversion, answer “use the default model” to inherit `OPENAI_MODEL`, or supply an exact model ID such as `gpt-6.1-sol` for that app alone. Use API model IDs rather than display names from ChatGPT. Image-only, audio-only, and embedding models are not setup interpreter models.
 
-A converted app can set `runtime.model` in its manifest to override `OPENAI_MODEL`. This does not change the framework's setup interpreter model. The CLI's `--apps`, `--data`, `--port`, and `--host` settings are command-line options; the `GPTAPPS_*` launcher defaults are not automatically read by the CLI.
+A fixed app can set `runtime.model` in its manifest to override `OPENAI_MODEL`. An Auto app instead sets `runtime.model: null` and embeds its policy in `runtime.routing`. Neither changes the framework's setup interpreter model. The CLI's `--apps`, `--data`, `--port`, `--host`, and `--routing-policy` settings are command-line options; the `GPTAPPS_*` launcher defaults are not automatically read by the CLI.
 
 [.env.example](.env.example) documents the settings. **The Python server and launchers do not automatically load `.env` files.** Use the launcher prompts or your normal environment/secret management. Never enter keys in GPT instructions, Action schemas, the web builder, or source control.
 
 Importing JSON, analyzing manifests, and building application folders work without API credentials. Plain `serve` can also start without them, but live setup interpretation and app chat will fail until the required server environment is configured.
+
+## Auto — cost-first routing
+
+Auto is an app-owner choice for application chat in both Studio and generated apps. Existing and imported apps stay fixed unless their owner explicitly adds a routing policy. Selecting Auto during creation does not route the generator's setup interpreter.
+
+### Enable and embed a policy
+
+Review [examples/routing-policy.example.json](examples/routing-policy.example.json), verify the candidate models and tools in your API project, then start the builder with that file alongside your usual launcher credentials/model settings:
+
+```sh
+./start.sh --routing-policy examples/routing-policy.example.json
+# Or use the Docker launcher, which mounts this file read-only:
+./docker-start.sh --routing-policy examples/routing-policy.example.json
+```
+
+The equivalent server configuration is `OPENAI_ROUTING_POLICY_FILE=/absolute/path/policy.json`. With the CLI:
+
+```sh
+python3 -m gptapps serve --apps apps --builder \
+  --routing-policy examples/routing-policy.example.json
+```
+
+At the model step choose **Auto — cost-first** or type `auto`; **Fixed — server default** and exact fixed model IDs remain available. Creation validates and embeds a snapshot under `runtime.routing`, with `runtime.model` set to `null`. You can also supply that validated snapshot in a canonical app manifest. A missing/malformed policy disables Auto with an actionable error; it does not prevent fixed-mode use. The policy is configuration, not a place for API keys or prompts.
+
+The server policy file controls new Auto snapshots. Editing it does not silently change existing app manifests or exports. To change an app's policy, edit its manifest, restart its server and start a new conversation. A standalone Auto export contains the snapshot and needs neither the original file nor `OPENAI_MODEL`; it still needs your runtime API key and project access.
+
+| Policy field | Meaning |
+| --- | --- |
+| `mode`, `version` | `cost_first` and an owner-chosen policy version |
+| `router_model` | `gpt-6-luna` for this release's Decisions classifier |
+| `timeout_seconds` | Routing timeout, default 2 seconds; allowed range 0.5–10 |
+| `min_probability` | Selected effort probability threshold, default `0.65`; a routing rule, not an answer-quality score |
+| `document_context_floor` | Owner-approved context allowance per binary document/image, default 32,768; exact usage remains unknown |
+| `fallback_model` | Explicit balanced/advanced candidate with text, document and image support; must be eligible for the request |
+| `candidates` | 1–32 approved records with exact `model`, `tier`, `cost_rank`, `context_window`, `max_output_tokens`, and `capabilities` |
+
+Candidate tiers are `economy`, `balanced`, and `advanced`. Lower nonnegative integer cost ranks express the owner's expected relative workload cost within a tier. Capabilities are `text`, `documents`, `images`, `web_search`, `image_generation`, `code_interpreter`, `file_search`, `function_calling`, and `structured_output`; image input and image generation are separate declarations. Unknown fields, duplicate model IDs and invalid limits are rejected.
+
+The example assigns Luna/Sol/Astra to economy/balanced/advanced with ranks 0/10/20 and Sol as fallback. These tiers and ranks are example policy choices requiring your own account and quality checks. The official [Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), [Sol](https://developers.openai.com/api/docs/models/gpt-6-sol), and [Astra](https://developers.openai.com/api/docs/models/gpt-6-astra) pages were checked on 2026-11-15 for text/image input, Structured Outputs, function calling and the listed hosted tools. The example conservatively uses their published 922,000 maximum input tokens as `context_window`, below their 1,050,000 total context, and 128,000 maximum output tokens. A declaration does not grant model/tool access or establish quality for your tasks; verify it before live use.
+
+### How a turn is selected
+
+The runtime filters the approved pool by the request's input types, every enabled tool, structured output and context/output budget. If only one candidate is eligible, it skips Decisions. Otherwise one `POST /v1/decisions` request asks two typed-choice questions: effort (`economy`, `balanced`, `advanced`, `uncertain`) and task category (`extraction`, `summary`, `transformation`, `explanation`, `reasoning`, `coding`, `other`). The classifier cannot return an arbitrary answering model. Local rules select the lowest sufficient eligible tier, then lowest cost rank, with model ID as a stable tie-break.
+
+An uncertain/invalid decision, effort probability below the threshold, unavailable effort tier, or transient router timeout/connection/5xx failure uses the configured compatible fallback and states why. No eligible candidate or incompatible fallback is a configuration error. Authentication, permission, exhausted quota and Decisions refusals surface explicitly. The runtime does not retry with a second answering model after an answer/tool failure.
+
+The chosen answer model stays pinned for the whole user turn, including function-call rounds. The next turn can select another model while preserving the retained conversation. Auto conversation fingerprints bind the app and policy snapshot rather than a turn's chosen model; instruction/policy changes require a new conversation. Fixed-mode fingerprints retain their existing model checks.
+
+### Attachment evidence, status and cost
+
+Routing considers the full current message (within the existing 16,000-character limit), up to 8,000 app-purpose/instruction characters, and the last eight messages capped at 16,000 characters combined. All retained/current attachments contribute filename, server-determined MIME type, size and originating-turn metadata. Readable UTF-8 text/code contributes at most 4,000 characters per file and 16,000 total, preferring current files. Excerpts and omitted history are identified as such. App text, history and document text are untrusted evidence and cannot change the policy.
+
+PDF, Office documents, RTF/ODT and images provide **metadata only** during routing; this release does not extract or inspect their contents for classification or send those files directly to Decisions. The answer still receives the original full request, retained history and validated files through Responses. Routing evidence caps do not truncate answer input. Byte sizes are not token counts, and provider context limits can still reject an input. The existing 5-file, 10 MiB-per-file and 20 MiB-per-conversation intake limits are unchanged.
+
+The accessible **Routing status** section sits in the left sidebar below **Recent Conversations** in both Studio and generated apps. On narrow screens, open **Conversations and routing** in the header to view it. The section shows selection progress, the answer model, route and short explanation constructed from validated classifications and applied rules. It labels the answer model as provider-reported when available and requested otherwise, separately from the Decisions router model. Expand details for fallback reasons, evidence coverage, probabilities, timings and separate router/answer token usage. Saved turns retain their compact routing record; reopening history restores it. Raw routing excerpts are not copied into that record or new logs. The version/build footer remains separate.
+
+Cost-first routing aims to send routine work to an economical approved model while reserving higher tiers for harder tasks. It adds a classification call and latency when several candidates are eligible. Evaluate **aggregate router plus answer usage**, including cached/uncached input, reasoning/output, hosted tools, fallbacks and any user retries; token counts and policy cost ranks are not dollar receipts. Ranks are reviewed configuration, not live prices, and this release does not promise a savings percentage or universal quality level. Compare against a fixed-model baseline on representative simple, complex, tool and document tasks, measuring usefulness/task success, errors, total cost, fallback frequency and latency. Some quality variation may accompany savings. Consult current [API pricing](https://developers.openai.com/api/docs/pricing) and the [Decisions guide](https://developers.openai.com/api/docs/guides/decisions) before a paid evaluation.
 
 ## Ways to use the framework
 
@@ -352,9 +425,9 @@ my-app/
 
 The generated Dockerfile includes Python 3.13, so Docker users do not need host Python. If executable permissions were lost while extracting the ZIP, use `bash start.sh` or `bash docker-start.sh`.
 
-Both scripts prompt for a missing OpenAI API key in the terminal with hidden input. If neither the manifest nor your environment specifies an app model, they also ask for an API model ID, such as `gpt-6.1-sol`. They wait for readiness and open [http://127.0.0.1:8765](http://127.0.0.1:8765). Keep the terminal open and press **Ctrl+C** to stop the app or container.
+Both scripts prompt for a missing OpenAI API key in the terminal with hidden input. For a fixed app, if neither the manifest nor your environment specifies an app model, they also ask for an API model ID, such as `gpt-6.1-sol`. Auto apps use their embedded policy and do not ask for an answer-model setting. They wait for readiness and open [http://127.0.0.1:8765](http://127.0.0.1:8765). Keep the terminal open and press **Ctrl+C** to stop the app or container.
 
-To select the environment default model before launching:
+For a fixed app, select the environment default model before launching:
 
 ```sh
 export OPENAI_MODEL="gpt-6.1-sol"
@@ -362,7 +435,7 @@ export OPENAI_MODEL="gpt-6.1-sol"
 # Or: ./docker-start.sh
 ```
 
-The scripts reuse an already exported `OPENAI_API_KEY`. They keep a key entered at the prompt only for the current run. `runtime.model` in `app.json` takes precedence over `OPENAI_MODEL`; set it to `null` if you want the environment default to apply. Generated apps do not need `OPENAI_SETUP_MODEL`. Choose a model your API project can access and that supports the app's selected tools. No `.env` file is loaded automatically.
+The scripts reuse an already exported `OPENAI_API_KEY`. They keep a key entered at the prompt only for the current run. For fixed apps, `runtime.model` in `app.json` takes precedence over `OPENAI_MODEL`; set it to `null` with no `runtime.routing` if you want the environment default. Auto apps keep `runtime.model: null` and use the policy snapshot in `runtime.routing`; the original policy file and `OPENAI_MODEL` are unnecessary. Generated apps do not need `OPENAI_SETUP_MODEL`. Your API project must support the configured models and tools. No `.env` file is loaded automatically.
 
 ### 3. Use a different port or data folder
 
@@ -416,7 +489,7 @@ Then open [http://127.0.0.1:8765](http://127.0.0.1:8765). The Python entrypoint 
 
 Review `compatibility.json` or run the check command before relying on an app. Builds can contain unresolved requirements: real knowledge files need vector store bindings, and real Actions need backend adapters. Empty knowledge/Action lists are valid. A successful check does not certify live model access.
 
-Press Ctrl+C before closing the launcher terminal. Keep `.gptapps-data/` to preserve conversations; stop the app and delete that directory only when you want to clear its local history and images. After changing `app.json` or the effective model, restart the server and start a new conversation.
+Press Ctrl+C before closing the launcher terminal. Keep `.gptapps-data/` to preserve conversations; stop the app and delete that directory only when you want to clear its local history and images. After changing `app.json`, its routing policy or a fixed app's effective model, restart the server and start a new conversation. Per-turn model selection under an unchanged Auto policy does not require a new conversation.
 
 Generated apps contain your private GPT instructions. Their `.gitignore` excludes `app.json` and `compatibility.json` as well as keys and runtime data; deliberately review any configuration you choose to publish. Their configuration and content are not automatically made public or relicensed by building them. The included MIT license covers the copied framework source.
 
@@ -424,7 +497,7 @@ Rebuild or re-download apps created before these launchers were added to receive
 
 ## Architecture
 
-### Framework: migration, knowledge ingestion, and build
+### Framework: migration, knowledge ingestion, routing, and build
 
 ```mermaid
 flowchart TD
@@ -439,6 +512,11 @@ flowchart TD
     Export --> Importer[Export normalizer]
     Importer --> Spec[Versioned application manifest]
     Validation --> Review[User reviews interpreted configuration]
+    Policy[Operator-reviewed routing policy JSON] --> PolicyCheck[Validate candidates, capabilities and limits]
+    PolicyCheck --> Auto[Owner selects Auto: embed policy snapshot]
+    Auto --> Review
+    Chat --> Fixed[Owner selects fixed model / server default]
+    Fixed --> Review
     Documents[Owner-selected local documents] --> Picker[Multiple-file picker]
     Picker --> Uploader[Builder server validates and forwards files]
     Uploader --> FilesAPI[OpenAI Files API<br/>POST /files]
@@ -454,6 +532,15 @@ flowchart TD
     Uploader --> Metadata[(Local upload metadata and provider IDs<br/>No document bytes)]
     Poll --> Metadata
     Review --> Spec
+    Spec --> Studio[Studio app chat: shared runtime]
+    Studio --> Evidence[Auto: bounded text and attachment metadata]
+    Evidence --> Filter[Policy capability/context/output filter]
+    Filter -->|Several eligible| Decisions[Decisions API: effort and task choices]
+    Filter -->|One eligible| Select
+    Decisions --> Select[Eligible tier and cost-rank selection / explicit fallback]
+    Studio -->|Fixed| Answer[Responses API: stream full inputs and tools]
+    Select --> Answer
+    Answer --> Status[Sidebar routing status and local history<br/>Answer model, reason and usage]
     Spec --> Report[Compatibility analysis]
     Spec --> Package[Standalone folder / ZIP]
     Report --> Package
@@ -461,36 +548,46 @@ flowchart TD
 
 The AI interpreter has no file-system, Action, or execution tools; explicitly attached documents are available as input content. It returns a proposed value for the current step or a clarification/navigation intent. The separate uploader forwards explicitly selected files using the server's API key, creates a vector store and batch, and checks indexing status. **Use these files** attaches only a ready collection to the reviewed draft; **Use files for this app** updates an existing app's knowledge binding. An indexing failure leaves an existing binding unchanged.
 
+Auto embeds only a validated nonsecret policy snapshot. The setup interpreter is never recursively routed; Studio's application-chat path uses the same router/Responses runtime as an export. Fixed mode bypasses Decisions. The full chat input reaches the answering model after selection; the bounded evidence pass is separate.
+
 Server validation runs before accepting settings; the final user instruction triggers app creation. Setup interpretation does not persist its own server conversation. Upload metadata persists locally for recovery, while document contents and the indexed vector store live in the OpenAI project. The ZIP includes the vector store ID and filenames, with no source documents, per-file upload metadata, upload-state files, or local conversation database. Packaging uses a runtime-file allowlist even if a custom data directory is nested under the source package.
 
-### Generated app: chat and knowledge retrieval
+### Generated app: routing, chat, and knowledge retrieval
 
 ```mermaid
-flowchart LR
-    Browser[App chat UI: text, picker, drag/drop] --> Intake[Bounded attachment validation]
-    Intake --> HTTP[Local Python HTTP server]
-    HTTP --> Runtime[Shared app runtime]
-    Manifest[(app.json<br/>Instructions, model, tools, vector store IDs)] --> Runtime
-    Environment[Server environment<br/>OpenAI API key] --> Runtime
-    Runtime <--> SQLite[(Local SQLite conversations)]
-    Runtime -->|Text plus inline file/image inputs| Responses[OpenAI Responses API]
-    Responses -->|If knowledge is bound| FileSearch[Hosted file_search tool]
+flowchart TD
+    Browser[App chat UI: text, picker, drag/drop] --> HTTP[Local Python HTTP server]
+    HTTP --> Runtime[Validate inputs and load retained conversation]
+    Manifest[(app.json: instructions, tools, bindings<br/>Fixed model OR embedded Auto policy)] --> Runtime
+    Environment[Server environment: OpenAI API key] --> Runtime
+    Runtime <--> SQLite[(Local SQLite conversations, attachments<br/>and compact routing records)]
+    Runtime --> Mode{App mode}
+    Mode -->|Fixed| Pin[Pin one answer model for this turn<br/>including function-call rounds]
+    Mode -->|Auto| Evidence[Bounded text/excerpts and file metadata<br/>PDF/Office/image contents excluded]
+    Evidence --> Filter[Policy input/tool/context/output filter]
+    Filter -->|Several eligible| Decisions[OpenAI Decisions API<br/>Effort and task typed choices]
+    Filter -->|One eligible: skip classifier| Select[Choose approved candidate<br/>or compatible explicit fallback]
+    Decisions --> Select
+    Select --> Pin
+    Pin -->|Full original inputs and retained files| Responses[OpenAI Responses API: stream answer]
+    Responses -->|If knowledge is bound| FileSearch[Hosted file_search]
     FileSearch <--> Knowledge[(OpenAI vector store<br/>Prepared by the framework)]
     FileSearch --> Responses
-    Responses --> Hosted[Other optional hosted tools]
+    Responses --> Hosted[Other enabled hosted tools]
     Responses --> Calls[Function call requests]
     Calls --> Registry[Approved read-only Python handlers]
-    Registry --> Runtime
-    Responses --> Results[Text / citations / image results]
+    Registry -->|Same pinned model| Responses
+    Responses --> Results[Text, citations, images and reported model/usage]
     Results --> Runtime
     Runtime --> Assets[(Local generated images)]
-    Runtime --> HTTP
+    Runtime --> Status[Sidebar below Recent Conversations<br/>Routing status: model, reason, fallback<br/>Separate router/answer usage]
+    Status --> HTTP
     HTTP --> Browser
 ```
 
-Each saved conversation is bound to its app ID and a configuration/model fingerprint. A changed configuration or model requires a new conversation. Previous user and assistant text, plus saved chat attachments, are replayed to the API with `store: false`. Chat attachment bytes remain in local private SQLite history; session UI responses expose names, MIME types and sizes only.
+Each saved conversation is bound to its app ID and a configuration fingerprint: fixed apps include the effective model; Auto apps include the policy snapshot rather than the model chosen per turn. A changed app/policy or fixed model requires a new conversation, while unchanged Auto policies can select different models across turns. Previous user and assistant text, plus saved chat attachments, are replayed to the API with `store: false`. Chat attachment bytes remain in local private SQLite history; session UI responses expose names, MIME types and sizes only.
 
-The generated app is self-contained: it reads the saved manifest and does not need the framework running. When knowledge is bound, its Responses request declares `file_search` with `bindings.vector_store_ids`. OpenAI handles retrieval from the already indexed documents and returns answer text and file citations. Chat attachments go directly in the Responses request without creating hosted Files resources. The generated app does not upload permanent knowledge documents, create vector stores, run the setup interpreter, or call the Agents API. Use an API key with access to the same OpenAI project that owns the store; copying the ZIP to another machine does not copy or transfer the hosted knowledge.
+The generated app is self-contained: it reads the saved manifest and does not need the framework running or, for Auto, the original policy file. Its bundled router classifies bounded evidence through Decisions; original files go to the answering Responses request. Selection and fallback reasons remain visible in Routing status and saved history. When knowledge is bound, its Responses request declares `file_search` with `bindings.vector_store_ids`. OpenAI handles retrieval from the already indexed documents and returns answer text and file citations. Chat attachments go directly in the Responses request without creating hosted Files resources. The generated app does not upload permanent knowledge documents, create vector stores, run the setup interpreter, or call the Agents API. Use an API key with access to the same OpenAI project that owns the store; copying the ZIP to another machine does not copy or transfer the hosted knowledge.
 
 ## Attach files to chat
 
@@ -503,13 +600,13 @@ In both the public framework and every newly generated app, click **Attach files
 - **Conversational setup:** attach documents as context for the current setup question. Clarification keeps the selected files queued for your next answer; advancing clears them. For the Instructions step, attach UTF-8 text/Markdown/code so its text can be preserved exactly, alongside any typed instructions. PDF/Word/image instructions must first be exported to text or pasted; the framework does not silently rewrite those instructions with AI. For Actions, attach an actual JSON array of complete definitions. The permanent-knowledge step uses its dedicated file picker/index controls, so chat attachments are disabled there. Review/creation requires an explicit typed confirmation without attachments. Attachments at a setup step do not automatically fill other steps.
 - **Permanent knowledge:** use the separate **Knowledge files** upload/index panel when every user of the created app needs a searchable knowledge collection. Attaching a file to chat does not index it or bind it to the generated app.
 
-Both chat paths use the server's existing `OPENAI_API_KEY`: regular chat uses the app's model/default `OPENAI_MODEL`; AI setup uses `OPENAI_SETUP_MODEL` (falling back to `OPENAI_MODEL`). No additional API credentials are needed. Existing downloaded apps need a **fresh standalone export** to receive the new UI and runtime.
+Both chat paths use the server's existing `OPENAI_API_KEY`: regular chat uses a fixed app model/default `OPENAI_MODEL` or its embedded Auto policy; AI setup uses `OPENAI_SETUP_MODEL` (falling back to `OPENAI_MODEL`). Auto's separate bounded routing pass is described under [Attachment evidence, status and cost](#attachment-evidence-status-and-cost). No additional API credentials are needed. Existing downloaded apps need a **fresh standalone export** to receive the new UI and runtime.
 
 Version **0.1.1** adds this feature to the public framework. The bottom-left label shows the installed version and build number. Source runs use a stable numeric source fingerprint; each standalone build receives a new immutable build number. Restarting an exported build retains its number. Release versions are maintained in `gptapps/version.py`.
 
 ## OpenAI APIs and tools
 
-Chat and setup inference use **`POST https://api.openai.com/v1/responses`**. The framework's knowledge uploader also calls the Files and Vector Stores APIs listed below. All OpenAI calls run on the server; there is no OpenAI credential in browser requests.
+Chat answers/tools and setup inference use **`POST https://api.openai.com/v1/responses`**. Optional Auto classification uses **`POST https://api.openai.com/v1/decisions`**; fixed apps and sole-eligible-candidate routes skip that call. The framework's knowledge uploader also calls the Files and Vector Stores APIs listed below. All OpenAI calls run on the server; there is no OpenAI credential in browser requests.
 
 | Caller / feature | API or tool | When used |
 | --- | --- | --- |
@@ -518,7 +615,8 @@ Chat and setup inference use **`POST https://api.openai.com/v1/responses`**. The
 | Framework: knowledge collection | Vector Stores API `POST /v1/vector_stores` | Creates a new collection for selected files |
 | Framework: knowledge indexing | Vector Stores API `POST /v1/vector_stores/{id}/file_batches` | Indexes the uploaded file IDs together |
 | Framework: indexing progress | Vector Stores API `GET /v1/vector_stores/{id}/file_batches/{batch_id}` | Checks completion and failed/cancelled counts before binding |
-| Converted app: chat | Responses API, with `stream: true` for the web chat | Each app conversation turn |
+| Framework and converted app: Auto routing | Decisions API `POST /v1/decisions`, two typed choices using `gpt-6-luna` | Once before an Auto answer when multiple candidates are eligible; bounded text/metadata evidence only |
+| Converted app: chat | Responses API, with `stream: true` for the web chat | Each app conversation turn, using the fixed or selected answer model |
 | Framework and converted app: chat attachments | Responses inline `input_file` and `input_image` content | Explicitly selected/dropped files sent with a message; no Files/Vector Stores call |
 | Converted app: structured output | Responses `text.format` with the configured object JSON Schema | If `runtime.output_schema` is set |
 | Converted app: web search | Responses hosted `web_search` tool | If enabled in `runtime.hosted_tools` |
@@ -543,7 +641,7 @@ The separate [Workspace Agents API](https://learn.chatgpt.com/workspace-agents/t
 triggers published agents that remain in ChatGPT. This framework does not implement
 Workspace Agent import, Workspace API triggers, or automatic migration to Agents API.
 
-Official references: [Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create), [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs), [web search](https://developers.openai.com/api/docs/guides/tools-web-search), [image generation](https://developers.openai.com/api/docs/guides/tools-image-generation), [code interpreter](https://developers.openai.com/api/docs/guides/tools-code-interpreter), [file search](https://developers.openai.com/api/docs/guides/tools-file-search), and [function calling](https://developers.openai.com/api/docs/guides/function-calling).
+Official references: [Decisions guide](https://developers.openai.com/api/docs/guides/decisions), [create decision](https://developers.openai.com/api/reference/python/resources/decisions/methods/create), [Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create), [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs), [web search](https://developers.openai.com/api/docs/guides/tools-web-search), [image generation](https://developers.openai.com/api/docs/guides/tools-image-generation), [code interpreter](https://developers.openai.com/api/docs/guides/tools-code-interpreter), [file search](https://developers.openai.com/api/docs/guides/tools-file-search), and [function calling](https://developers.openai.com/api/docs/guides/function-calling).
 
 ### Streaming and rich text
 
@@ -577,7 +675,7 @@ The canonical manifest uses schema version `1.0`:
 | `instructions` | Full developer instructions, handled as configuration data |
 | `conversation_starters` | Initial prompts shown in the app |
 | `source` | Import/setup origin and source identifier |
-| `runtime` | Responses API, model, hosted tools, limits, optional output schema |
+| `runtime` | Responses API, fixed model or optional routing policy snapshot, hosted tools, limits, optional output schema |
 | `bindings` | Vector store IDs, allowed function names, Action-to-function mappings |
 | `requirements` | File inventory, Action IDs, unsupported enabled capabilities |
 | `action_definitions` | Credential-free Action definitions for chat-created apps |
@@ -589,6 +687,7 @@ Frequently edited settings:
   "runtime": {
     "api": "responses",
     "model": null,
+    "routing": null,
     "hosted_tools": [],
     "max_output_tokens": 16384,
     "max_tool_rounds": 4,
@@ -607,7 +706,7 @@ Frequently edited settings:
 }
 ```
 
-This is a manifest fragment; required identity and instruction fields are omitted for readability. Existing manifests can be edited as JSON. Conversational editing of an already-saved app is not implemented. Restart its server and start a new conversation after changing configuration.
+This is a fixed-mode manifest fragment; required identity and instruction fields are omitted for readability. For Auto, keep `model: null` and replace `routing: null` with the complete validated policy object, as shown in [the example policy](examples/routing-policy.example.json). Without routing, a null model uses `OPENAI_MODEL`. Existing manifests can be edited as JSON. Conversational editing of an already-saved app is not implemented. Restart its server and start a new conversation after changing configuration.
 
 ## Knowledge files and Actions
 
@@ -679,7 +778,7 @@ These routes are intended for the local UI, not an authenticated public service:
 | Route | Purpose | Builder only |
 | --- | --- | --- |
 | `GET /` | Web chat UI | No |
-| `GET /api/config` | UI mode | No |
+| `GET /api/config` | UI mode, release/build, attachment limits and Auto policy availability/error | No |
 | `GET /api/apps` | App summaries and compatibility reports | No |
 | `POST /api/chat` | App chat turn; `stream: true` returns SSE, omitted/false returns JSON | No |
 | `GET /static/chat.js`, `GET /static/vendor/...` | Bundled chat client and Markdown/sanitizer libraries | No |
@@ -699,7 +798,7 @@ These routes are intended for the local UI, not an authenticated public service:
 
 JSON POST requests require `Content-Type: application/json`; the single-file upload route requires `application/octet-stream`. App creation can include `knowledge_upload_id` to attach an already indexed collection. Provider IDs supplied by the browser are not trusted as bindings; the server resolves them from its own validated upload record. Host/Origin checks reject unexpected local hosts and cross-origin browser requests. They are not user authentication.
 
-For streaming requests, SSE data objects use `reset` (new model/tool round), `delta` (text plus output/content indices), `status` (tool activity), `done` (saved session and final message), or `error`. The UI waits for `done` to confirm persistence. A `done` message carrying `incomplete_reason: max_output_tokens` is a saved partial answer, not a complete model response; API clients should display that distinction too. Validation errors before streaming starts return JSON with an error HTTP status; errors after streaming starts use an SSE `error` event.
+For streaming requests, SSE data objects use `routing` (current selection or completed bounded routing metadata), `reset` (new answer/tool round), `delta` (text plus output/content indices), `status` (tool activity), `done` (saved session and final message), or `error`. The UI waits for `done` to confirm persistence. Successful assistant messages may contain optional `routing` metadata; legacy messages without it remain valid. A `routing` event alone does not confirm a saved turn. A `done` message carrying `incomplete_reason: max_output_tokens` is a saved partial answer, not a complete model response; API clients should display that distinction too. Validation errors before streaming starts return JSON with an error HTTP status; errors after streaming starts use an SSE `error` event.
 
 ## Privacy and public repositories
 
@@ -709,7 +808,7 @@ The root [.gitignore](.gitignore) excludes local secrets, `apps/`, `migrated/`, 
 
 Before your first public commit, inspect what will be staged. Ignore rules do not remove files that were already tracked and cannot detect private content saved under arbitrary names. Never commit `.env`, API keys, private exports, chat databases, or generated app ZIPs. Prefer the documented ignored directories for local data and generated builds.
 
-Keys remain in the server environment. The framework does not log request bodies, authorization headers, or conversation text, and it summarizes provider errors. Instructions and relevant user inputs are sent to OpenAI when the associated API feature is used. Local conversation history and generated images persist unencrypted under the data directory; stop the server and delete that directory to clear them. Failed requests can still incur API charges.
+Keys remain in the server environment. The framework does not log request bodies, authorization headers, or conversation text, and it summarizes provider errors. Instructions and relevant user inputs are sent to OpenAI when the associated API feature is used. Auto also sends the documented bounded text/excerpts and attachment metadata to Decisions, then full answering inputs to Responses; it adds no raw-evidence log or second stored copy of excerpts. Local conversation history and generated images persist unencrypted under the data directory; stop the server and delete that directory to clear them. Failed requests can still incur API charges.
 
 For shared hosting, add authentication, user-owned sessions, tenant isolation, HTTPS, secrets management, rate limits, budgets, backups/deletion policies, observability, and approved write handling. Docker packaging does not supply these controls.
 
@@ -719,7 +818,8 @@ For shared hosting, add authentication, user-owned sessions, tenant isolation, H
 - No behavior-parity guarantee, model-availability discovery, production hosting, accounts, or billing system.
 - No private GPT scraping or automatic Action execution. Knowledge uploads/indexing require explicit file selection in the builder; standalone apps retrieve from the resulting store and do not expose upload controls.
 - No full free-form, multi-field editor: AI interprets the current guided step and its clarification history.
-- No chat file attachments, resumable streams, or rich-text editing of user messages.
+- No resumable streams or rich-text editing of user messages.
+- Auto routing does not extract binary documents/images, dynamically discover prices/access, grade answers, or automatically generate a second answer. Policy declarations and context estimates still require representative evaluation.
 - File citations display filenames; source URL citations display links.
 - Generated images are displayed, but image bytes and internal tool outputs are not replayed across turns; persistent image-editing workflows need an adapter.
 - Code Interpreter artifact downloads are not implemented.
@@ -734,12 +834,12 @@ Run the standard-library unit/integration suite:
 python3 -m unittest discover -s tests -v
 ```
 
-Tests use fake providers, temporary app catalogs, and isolated history. They cover import preservation, empty knowledge/Actions, multiple-file upload validation, multipart requests, indexing readiness/failures, upload recovery, provider redirect rejection, private export exclusion, configuration blockers, AI interpretation contracts, session isolation, function calling, standalone builds, and launchers. They do not require real keys or make OpenAI requests.
+Tests use fake providers, temporary app catalogs, and isolated history. They cover import preservation, empty knowledge/Actions, multiple-file upload validation, multipart requests, indexing readiness/failures, upload recovery, provider redirect rejection, private export exclusion, configuration blockers, AI interpretation contracts, session isolation, function calling, standalone builds, and launchers. Routing coverage includes policy validation, bounded/metadata-only evidence, typed Decisions choices, capability filtering, fallback/error behavior, per-turn model pinning, fixed compatibility, history status and export policy snapshots. They do not require real keys or make OpenAI requests.
 
 Streaming tests also verify that text arrives before provider completion, interrupted/disconnected turns are not committed, function-call rounds still work, and SSE parsing preserves UTF-8. Optional browser-stream decoder tests use Node's built-in test runner without npm dependencies:
 
 ```sh
-node --test tests/test_chat_stream.js tests/test_knowledge_ui.js tests/test_chat_attachments.js
+node --test tests/test_chat_stream.js tests/test_knowledge_ui.js tests/test_chat_attachments.js tests/test_routing_ui.js
 ```
 
 To also build and test the real Docker image, start Docker and run:
@@ -768,7 +868,11 @@ Before relying on a migration, also test representative tasks against a live API
 | --- | --- |
 | Python is missing or older than 3.11 | Install a supported interpreter or use `./docker-start.sh` |
 | Launcher cannot find the model/key in a non-interactive run | Set `OPENAI_API_KEY` and `OPENAI_MODEL` in that process's environment |
-| `Set OPENAI_SETUP_MODEL or OPENAI_MODEL` | Configure a server model for AI-assisted setup |
+| `Set OPENAI_SETUP_MODEL or OPENAI_MODEL` | Configure a server model for AI-assisted setup; Auto answer routing does not configure setup |
+| Auto is unavailable / missing routing policy | Set `OPENAI_ROUTING_POLICY_FILE` or use `--routing-policy FILE`; review the validated JSON example, then select Auto at creation |
+| No eligible candidate / fallback ineligible | Review the embedded policy against all enabled inputs/tools, structured output and context/output budgets; do not remove requirements to force selection |
+| Auto uses fallback | Expand Routing status for the actual uncertainty, invalid-decision or transient-service reason; verify candidate access and evaluate the policy |
+| Decisions refusal, authentication or quota error | Resolve the displayed cause; these errors do not silently switch models or start an answer |
 | Setup API error or timeout | Check access, billing, connectivity, and Structured Outputs support; retry the unchanged step |
 | HTTP 429 with `credit_balance_exhausted` | Check prepaid API credits in the API key's organization and add credits if needed |
 | HTTP 429 with `insufficient_quota` | Check API credits and usage/spend limits for the API key's organization/project; waiting alone will not restore quota |
@@ -778,7 +882,7 @@ Before relying on a migration, also test representative tasks against a live API
 | Setup asks about an uncertain reply | Answer the follow-up directly; uncertainty is not converted into an empty requirement |
 | `knowledge_unbound` / “Upload/index the knowledge files” | Open Knowledge files in the builder, upload/index the documents and use the ready collection; correct the inventory to `[]` if the GPT has no files |
 | `action_unbound` | Bind each recorded Action ID to a reviewed registered backend tool |
-| `Application configuration changed` | Start a new conversation after changing the manifest or model |
+| `Application configuration changed` | Start a new conversation after changing the manifest, routing policy or fixed model |
 | Port is unavailable | Stop your existing server/container or use `--port 9000` |
 | Browser shows `Invalid host` | Use `http://127.0.0.1:PORT` or `http://localhost:PORT` with the configured port |
 | Opening `gptapps/chat.html` directly fails | Use a launcher or `gptapps serve`; the UI needs the local backend |
@@ -805,10 +909,13 @@ Restart the server to load client changes. Previously generated applications con
 │   ├── setup.py                # AI-assisted setup interpretation
 │   ├── knowledge.py            # Files/Vector Stores client and persistent upload state
 │   ├── runtime.py              # Responses client and chat/session runtime
+│   ├── routing.py              # Policy, bounded evidence and answer-model selection
+│   ├── decisions.py            # Server-side Decisions API client
 │   ├── web.py                  # Local HTTP server and builder endpoints
 │   ├── chat.html               # Builder and end-user UI
 │   ├── chat.js                 # Streaming chat client and sanitized Markdown
 │   ├── knowledge.js            # Multiple-file picker, upload progress, and ready binding
+│   ├── routing.js / routing.css # Routing status rendering and responsive styles
 │   ├── chat.css                # Shared responsive workspace and chat design
 │   ├── icons/                  # Bundled Lucide icons and their license
 │   ├── vendor/                 # Bundled browser libraries and their licenses
@@ -817,6 +924,7 @@ Restart the server to load client changes. Previously generated applications con
 │   ├── extensions.py           # Trusted Python function registry
 │   └── cli.py                  # import / check / build / serve
 ├── examples/minimal-export.json
+├── examples/routing-policy.example.json
 ├── plugin/                     # Optional migration skill scaffold
 ├── scripts/                    # Shared launcher helpers and container entrypoint
 ├── tests/                      # Fake-provider tests and optional browser smoke test

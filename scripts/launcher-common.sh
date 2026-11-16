@@ -7,17 +7,18 @@ launcher_options() {
   OPEN_BROWSER=1
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --port|--apps|--data)
+      --port|--apps|--data|--routing-policy)
         [[ $# -ge 2 && -n "$2" ]] || { echo "Missing value for $1" >&2; exit 1; }
         case "$1" in
           --port) PORT="$2" ;;
           --apps) APPS_DIR="$2" ;;
           --data) DATA_DIR="$2" ;;
+          --routing-policy) OPENAI_ROUTING_POLICY_FILE="$2" ;;
         esac
         shift 2 ;;
       --no-browser) OPEN_BROWSER=0; shift ;;
       -h|--help)
-        echo "Usage: $0 [--port PORT] [--apps DIRECTORY] [--data DIRECTORY] [--no-browser]"
+        echo "Usage: $0 [--port PORT] [--apps DIRECTORY] [--data DIRECTORY] [--routing-policy FILE] [--no-browser]"
         echo "Starts the builder at http://127.0.0.1:PORT. Press Ctrl+C to stop."
         exit 0 ;;
       *) echo "Unknown option: $1. Use --help." >&2; exit 1 ;;
@@ -27,6 +28,11 @@ launcher_options() {
   [[ ${#PORT} -le 5 ]] && (( 10#$PORT >= 1 && 10#$PORT <= 65535 )) || {
     echo "Port must be between 1 and 65535." >&2; exit 1;
   }
+  if [[ -n "${OPENAI_ROUTING_POLICY_FILE:-}" ]]; then
+    [[ -f "$OPENAI_ROUTING_POLICY_FILE" && -r "$OPENAI_ROUTING_POLICY_FILE" ]] || { echo "Routing policy must be a readable JSON file." >&2; exit 1; }
+    OPENAI_ROUTING_POLICY_FILE="$(cd "$(dirname "$OPENAI_ROUTING_POLICY_FILE")" && pwd)/$(basename "$OPENAI_ROUTING_POLICY_FILE")"
+    export OPENAI_ROUTING_POLICY_FILE
+  fi
   PORT=$((10#$PORT))
   URL="http://127.0.0.1:$PORT"
 }
