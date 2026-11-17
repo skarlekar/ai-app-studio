@@ -13,7 +13,7 @@ CAPABILITIES = {
 
 
 def validate(app):
-    if app.get("schema_version") != VERSION:
+    if app.get("schema_version") not in (VERSION, "2.0"):
         raise ValueError("Unsupported application schema version")
     for key in ("id", "name", "instructions"):
         if not isinstance(app.get(key), str) or not app[key].strip():
@@ -25,8 +25,13 @@ def validate(app):
     ):
         raise ValueError("conversation_starters must be a list of strings")
     runtime = app.get("runtime", {})
-    if runtime.get("api") != "responses":
-        raise ValueError("This runtime supports the Responses API")
+    if runtime.get("api") not in ("responses", "agents"):
+        raise ValueError("Choose the Responses or Agents API runtime")
+    if runtime.get("api") == "agents":
+        if app.get("schema_version") != "2.0":
+            raise ValueError("Agents requires application schema 2.0")
+        from .agents_config import validate_agents_config
+        validate_agents_config(runtime)
     if runtime.get("model") is not None and not isinstance(runtime["model"], str):
         raise ValueError("model must be a string or null")
     if runtime.get('routing') is not None:
@@ -109,6 +114,9 @@ def analyze(app):
     """Heuristic suggestions are separate from deterministic blockers."""
     validate(app)
     issues = []
+    if app["runtime"]["api"] == "agents":
+        from .agents_config import compatibility_issues
+        issues.extend(compatibility_issues(app))
     req, bindings = app.get("requirements", {}), app["bindings"]
     if req.get("knowledge_files") and not bindings["vector_store_ids"]:
         issues.append({"severity": "blocker", "code": "knowledge_unbound", "message":
@@ -164,7 +172,13 @@ def from_chat_input(draft):
         " ".join(files[0].lower().split()),
     ):
         files = []
+    api = draft.get("api", "responses")
+    if api not in ("responses", "agents"):
+        raise ValueError("Choose the Responses or Agents API runtime")
     model = draft.get("model")
+    if api == "agents":
+        from .agents_config import validate_agents_config
+        validate_agents_config({"model":model,"agents":draft.get("agents",{})})
     if model is not None and (not isinstance(model, str) or not model.strip() or len(model) > 128):
         raise ValueError("Invalid model setting")
     actions = draft.get("actions", [])
@@ -213,4 +227,8 @@ def from_chat_input(draft):
     else:
         app["runtime"]["model"] = model
     app["action_definitions"] = definitions
+    if api == "agents":
+        app["schema_version"] = "2.0"
+        app["runtime"]["api"] = "agents"
+        app["runtime"]["agents"] = validate_agents_config({"model":model,"agents":draft.get("agents",{})})
     return validate(app)
