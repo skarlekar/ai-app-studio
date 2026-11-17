@@ -26,6 +26,17 @@ class ManagedExportTests(unittest.TestCase):
                 self.assertIn('requirements.txt',(target/'Dockerfile').read_text())
                 self.assertTrue((target/'gptapps/build-info.json').is_file())
 
+    def test_agents_export_readme_describes_its_actual_api_storage_and_architecture(self):
+        with tempfile.TemporaryDirectory() as folder:
+            target=Path(folder)/'app';build_app(managed(),target)
+            readme=(target/'README.md').read_text()
+            self.assertIn('managed.sqlite3',readme)
+            self.assertIn('managed-artifacts/',readme)
+            self.assertIn('Agents API sessions',readme)
+            self.assertIn('Vector Stores Search',readme)
+            self.assertNotIn('messages in SQLite (`.gptapps-data/sessions.sqlite3`)',readme)
+            self.assertIn('Durable run supervisor',readme)
+
     def test_framework_and_generated_launchers_offer_optional_agents_support(self):
         root=Path(__file__).resolve().parents[1]
         for path in ('scripts/launcher-common.sh','gptapps/templates/launcher-common.sh'):

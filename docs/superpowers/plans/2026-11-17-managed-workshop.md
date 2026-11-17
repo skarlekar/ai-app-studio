@@ -61,4 +61,4 @@
 - [x] Add failing tests for optional SDK packaging, clean standalone start, Docker assets and evaluation release hold states.
 - [x] Implement packaging, launchers, documentation, architecture diagrams, release notes and evaluation tooling.
 - [x] Run full unittest/Node suites, offline end-to-end browser verification and bounded live check when configured.
-- [ ] Request fresh whole-branch review; resolve important findings with reproducing tests; commit and push feature branch only.
+- [x] Request fresh whole-branch review; resolve important findings with reproducing tests; commit and push feature branch only.

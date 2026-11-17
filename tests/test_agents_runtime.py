@@ -180,6 +180,53 @@ class ManagedRuntimeTests(unittest.TestCase):
         self.assertEqual(self.done(run)['state'],'completed')
         self.assertEqual(len(self.client.created),1);self.assertFalse(self.client.sent)
 
+    def recover_unsent_followup(self,state):
+        first=self.done(self.start());pinned=self.runtime.store.internal(first['id'])['payload']['app']
+        second=self.runtime.store.create(pinned,first['session_id'],'unsent-followup','A different question',[])
+        self.runtime.store.update(second['id'],state=state)
+        self.runtime.recover();result=self.done(second)
+        self.assertEqual(result['state'],'completed',result)
+        self.assertEqual(len(self.client.sent),1)
+        self.assertEqual(result['turn_id'],'turn-2')
+
+    def test_restart_sends_queued_followup_instead_of_reusing_previous_answer(self):
+        self.recover_unsent_followup('queued')
+
+    def test_restart_sends_definitely_unsent_preparing_followup(self):
+        self.recover_unsent_followup('preparing')
+
+    def test_followup_early_eof_reconnects_without_resending(self):
+        first=self.done(self.start());original=self.client.events;calls=[]
+        @contextmanager
+        def truncated_once(sid):
+            calls.append(sid)
+            if len(calls)==1:yield iter([])
+            else:
+                with original(sid) as events:yield events
+        self.client.events=truncated_once
+        result=self.done(self.start(first['session_id'],'followup-eof'))
+        self.assertEqual(result['state'],'completed',result)
+        self.assertEqual(len(self.client.sent),1)
+        self.assertGreaterEqual(len(calls),2)
+
+    def test_deadline_supervises_durable_work_without_a_live_worker(self):
+        first=self.done(self.start());pinned=self.runtime.store.internal(first['id'])['payload']['app']
+        second=self.runtime.store.create(pinned,first['session_id'],'unobserved-followup','New question',[])
+        self.client.send(self.client.sid,'New question','unobserved-followup')
+        self.runtime.store.update(second['id'],state='needs_reconciliation',input_sent=True,turn_id='turn-2',created=time.time()-1000)
+        end=time.monotonic()+2
+        while time.monotonic()<end and self.client.status!='cancelled':time.sleep(.01)
+        self.assertEqual(self.client.status,'cancelled')
+        self.assertEqual(self.done(second)['state'],'cancelled')
+
+    def test_unknown_followup_send_is_not_resubmitted_or_bound_to_old_turn(self):
+        first=self.done(self.start());pinned=self.runtime.store.internal(first['id'])['payload']['app']
+        second=self.runtime.store.create(pinned,first['session_id'],'unknown-followup','New question',[])
+        self.runtime.store.update(second['id'],state='preparing',input_sent=True,previous_turn_ids=[first['turn_id']])
+        self.runtime.recover();result=self.done(second)
+        self.assertEqual(result['state'],'needs_reconciliation',result)
+        self.assertFalse(self.client.sent);self.assertIsNone(result['result'])
+
     def test_same_data_directory_cannot_have_two_supervisors(self):
         with self.assertRaisesRegex(ValueError,'another server'):
             ManagedRuntime(self.tmp.name,client=self.client)

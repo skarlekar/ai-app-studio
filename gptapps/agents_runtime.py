@@ -82,10 +82,12 @@ class ManagedRuntime:
     def recover(self):
         for run in self.store.active():
             if run['state']=='needs_reconciliation':continue
-            if not run.get('provider_session_id'):
-                # A queued intent has not started; a preparing intent may have reached the provider.
-                if run['state']=='queued':self._launch(run['id'],False)
-                else:self._state(run['id'],'needs_reconciliation','The original submission outcome is unknown; do not resend. Start a new conversation only after reviewing provider sessions.')
+            if not run.get('input_sent') and not run.get('turn_id'):
+                # A follow-up inherits a session ID before its new message is sent.
+                # The durable send-intent, not that inherited ID, defines ambiguity.
+                self._launch(run['id'],False)
+            elif not run.get('provider_session_id'):
+                self._state(run['id'],'needs_reconciliation','The original submission outcome is unknown; do not resend. Start a new conversation only after reviewing provider sessions.')
             else:self._launch(run['id'],True)
 
     def _state(self,run_id,state,error=None):
@@ -171,7 +173,7 @@ class ManagedRuntime:
                         if current['state'] in TERMINAL:return
                         submitted=True;self.client.send(run['provider_session_id'],text,run['submission_id'])
                         self._observe_provider(run_id,events)
-                    return
+                    if self.store.internal(run_id)['state'] in STOPPED:return
             self._reconnect(run_id)
         except ValueError as error:
             current=self.store.internal(run_id)
@@ -211,13 +213,14 @@ class ManagedRuntime:
     def _watch(self):
         last_cleanup=time.monotonic()
         while not self.stop.wait(.25):
-            for run_id,thread in list(self.threads.items()):
-                if not thread.is_alive():continue
+            for run in self.store.active():
                 try:
-                    run=self.store.internal(run_id)
-                    if (run['state'] not in STOPPED and not run.get('cancel_requested') and run['payload'] and
+                    run_id=run['id']
+                    if (not run.get('cancel_requested') and run['payload'] and
                             time.time()-run['created']>run['payload']['app']['runtime']['agents']['max_run_seconds']):
                         self.cancel(run['app_id'],run_id,deadline=True)
+                        worker=self.threads.get(run_id)
+                        if run.get('provider_session_id') and (not worker or not worker.is_alive()):self._launch(run_id,True)
                 except Exception:pass
             if time.monotonic()-last_cleanup>=60:
                 self.maintenance();last_cleanup=time.monotonic()
@@ -258,6 +261,7 @@ class ManagedRuntime:
             self.store.bind(run_id,sid,event.get('session',{}).get('environment',{}).get('id'),run.get('knowledge_revision'))
         if sid and run.get('provider_session_id') and sid!=run['provider_session_id']:raise ValueError('Mismatched provider session event')
         tid=event.get('turn_id')
+        if tid and tid in run.get('previous_turn_ids',[]):return
         if kind=='agent.session.turn.created' and not event.get('turn',{}).get('subagent_id'):
             if not run.get('turn_id'):self.store.update(run_id,turn_id=tid)
             if run.get('cancel_requested'):self.cancel(run['app_id'],run_id)

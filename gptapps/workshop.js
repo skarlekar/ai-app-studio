@@ -58,30 +58,39 @@ async function workshopObserve(run,pending,token,app){
  },'/api/runs/'+run.id+'/events?app='+encodeURIComponent(app),workshopController.signal);
  if(token!==workshopGeneration)return;
  workshopForget(app,run);sid=result.session_id;pending.replaceWith(message(result.message));
- const saved=await api('/api/runs/'+run.id+'?app='+encodeURIComponent(app));workshopRun=saved;workshopSide(saved);routingShow(result.message?.routing,'saved');await sessions();
+ const saved=await api('/api/runs/'+run.id+'?app='+encodeURIComponent(app));if(token!==workshopGeneration||current?.id!==app||wizard)return;workshopRun=saved;workshopSide(saved);routingShow(result.message?.routing,'saved');await sessions();
 }
 async function sendManaged(text){
  const app=current.id;workshopDetach();const token=workshopGeneration;loading(true);$('welcome')?.remove();
- const chosen=[...chatFiles];message({role:'user',content:text,attachments:chosen});setInput('');
+ const chosen=[...chatFiles];const userMessage=message({role:'user',content:text,attachments:chosen});setInput('');
  const pending=message({role:'assistant',content:''});const submission=crypto.randomUUID();
  let run={id:null,session_id:sid,submission_id:submission,state:'queued',model:current.runtime.model};
  workshopRemember(app,run);workshopRun=run;workshopPanel(run,pending);
  try{
   const attachments=await chatFilePayload(chosen);
+  if(token!==workshopGeneration||current?.id!==app||wizard){workshopForget(app,run);return;}
   run=await api('/api/runs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({app_id:app,session_id:sid,message:text,attachments,submission_id:submission})});
-  run.submission_id=submission;workshopRemember(app,run);workshopRun=run;sid=run.session_id;clearChatFiles();workshopPanel(run,pending);
+  run.submission_id=submission;workshopRemember(app,run);
+  if(token!==workshopGeneration||current?.id!==app||wizard)return;
+  workshopRun=run;sid=run.session_id;clearChatFiles();workshopPanel(run,pending);
   await workshopObserve(run,pending,token,app);
  }catch(e){if(token!==workshopGeneration)return;
-  try{const saved=await api('/api/runs?app='+encodeURIComponent(app)+'&submission_id='+submission);run={...saved,submission_id:submission};workshopRemember(app,run);}catch{}
-  workshopRun={...run,state:['failed','cancelled','needs_reconciliation'].includes(run.state)?run.state:'reconnecting',error:e.message+' The task may still be working; reconcile saved status before resubmitting.'};workshopPanel(workshopRun,pending);showError(e);
+  let lookupError=null;
+  try{const saved=await api('/api/runs?app='+encodeURIComponent(app)+'&submission_id='+submission);run={...saved,submission_id:submission};workshopRemember(app,run);}catch(error){lookupError=error;}
+  if(token!==workshopGeneration||current?.id!==app||wizard)return;
+  const rejected=!safeRunId(run.id)&&[400,401,403,404,405,413,415,422].includes(e.status)&&lookupError?.status===404;
+  if(rejected){workshopForget(app,run);workshopRun=null;pending.remove();userMessage.remove();setInput(text);workshopSide(null);showError(e);return;}
+  const stopped=['failed','cancelled','needs_reconciliation'].includes(run.state);
+  workshopRun={...run,state:stopped?run.state:'reconnecting',error:e.message+(stopped?'':' The task may still be working; reconcile saved status before resubmitting.')};workshopPanel(workshopRun,pending);showError(e);
  }finally{if(token===workshopGeneration){loading(false);if(workshopRun&&workshopRun.state!=='completed'){$('input').disabled=true;$('send').disabled=true;$('chat-attach').disabled=true;}else $('input').focus();}}
 }
 async function workshopRecoverMarker(app,marker){
+ const generation=workshopGeneration;
  const run=marker.id?await api('/api/runs/'+marker.id+'?app='+encodeURIComponent(app)):await api('/api/runs?app='+encodeURIComponent(app)+'&submission_id='+encodeURIComponent(marker.submission_id));
  run.submission_id=marker.submission_id;
  if(run.state==='needs_reconciliation')await api('/api/runs/'+run.id+'/reconcile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({app_id:app})});
  const saved=await api('/api/sessions?app='+encodeURIComponent(app)+'&id='+encodeURIComponent(run.session_id));
- if(current?.id!==app||wizard)return;
+ if(current?.id!==app||wizard||generation!==workshopGeneration)return;
  workshopDetach();sid=saved.id;clearChatFiles();$('messages').replaceChildren();saved.messages.forEach(message);routingRestore(saved.messages);await sessions();
  await workshopRestore(saved);
 }
@@ -93,7 +102,7 @@ async function workshopRecover(){
 }
 async function workshopRestore(saved){
  const run=saved.run;if(!run)return;workshopRun=run;workshopSide(run);
- if(run.state==='completed'||saved.archived)return;
+ if(run.state==='completed'||saved.archived){workshopForget(current.id,run);return;}
  const token=workshopGeneration,app=current.id;loading(activeRun(run));const pending=message({role:'assistant',content:''});workshopPanel(run,pending);
  if(!activeRun(run)){loading(false);$('input').disabled=true;$('send').disabled=true;return;}
  try{await workshopObserve(run,pending,token,app);}catch(e){if(token===workshopGeneration){workshopRun={...run,state:'reconnecting',error:'Connection interrupted; provider work may continue.'};workshopPanel(workshopRun,pending);showError(e);}}

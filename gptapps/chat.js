@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);let apps=[],current=null,sid=null,busy=false,wizard=null,builderEnabled=false,routingAvailable=false,routingError='';
-async function api(path,options){const response=await fetch(path,options);const data=await response.json();if(!response.ok)throw new Error(data.error||'Request failed');return data}
+async function api(path,options){const response=await fetch(path,options);const data=await response.json();if(!response.ok){const error=new Error(data.error||'Request failed');error.status=response.status;throw error;}return data}
 function element(tag,text,className){const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(className)el.className=className;return el}
 function showError(error){$('error').textContent=error.message||String(error)}
 function initial(name){return Array.from((name||'A').trim())[0]?.toUpperCase()||'A';}
@@ -165,7 +165,7 @@ function welcome(){
  $('messages').replaceChildren(box);
 }
 async function sessions(){const records=await api('/api/sessions?app='+encodeURIComponent(current.id));$('sessions').replaceChildren();if(!records.length)$('sessions').append(element('div','No conversations yet','empty'));for(const item of records){const button=element('button',item.title,'session'+(item.id===sid?' active':''));button.title=item.title;button.disabled=busy;button.onclick=async()=>{routingClear();try{const saved=await api('/api/sessions?app='+encodeURIComponent(current.id)+'&id='+encodeURIComponent(item.id));clearChatFiles();setInput('');sid=saved.id;$('messages').replaceChildren();saved.messages.forEach(message);routingRestore(saved.messages);closeHistory();await sessions();if(typeof workshopRestore==='function'){workshopDetach();workshopRestore(saved).catch(showError);}}catch(e){showError(e)}};$('sessions').append(button)}}
-async function start(resumeManaged=true){if(typeof workshopDetach==='function')workshopDetach();routingClear();clearChatFiles();setInput('');closeHistory();wizard=null;resetKnowledge();sid=null;$('input').maxLength=16000;$('error').textContent='';$('apps').disabled=false;updateChrome();welcome();await sessions();$('input').focus();if(resumeManaged&&typeof workshopRecover==='function')workshopRecover();}
+async function start(resumeManaged=true){if(typeof workshopDetach==='function')workshopDetach();loading(false);routingClear();clearChatFiles();setInput('');closeHistory();wizard=null;resetKnowledge();sid=null;$('input').maxLength=16000;$('error').textContent='';$('apps').disabled=false;updateChrome();welcome();await sessions();$('input').focus();if(resumeManaged&&typeof workshopRecover==='function')workshopRecover();}
 function loading(value){busy=value;$('send').disabled=value;$('apps').disabled=value||!!wizard;$('new').disabled=value;$('create').disabled=value;$('input').disabled=value;document.querySelectorAll('.session').forEach(b=>b.disabled=value);$('status').textContent=value?'Working…':'Ready';$('status').dataset.state=value?'busy':'ready';updateChrome()}
 const steps=[
  {key:'name',question:'What is the name of your application?'},

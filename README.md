@@ -754,7 +754,7 @@ If OpenAI reports `incomplete_details.reason: max_output_tokens` with usable tex
 
 If a stream fails or ends without a terminal provider response, partial text is not saved. The UI restores the submitted input and displays the error. If a network interruption prevents confirmation, inspect saved conversations before resending. Previously generated apps need to be rebuilt or re-downloaded to include these changes; restart the server and refresh the browser after updating.
 
-### Long responses and output limits
+### Long responses and output limits (Responses runtime)
 
 New app configurations default to **16,384 output tokens** per model call. This budget includes visible text and reasoning, so it is not a word count. You can edit `runtime.max_output_tokens` in the app manifest; the framework accepts budgets up to 131,072, but your selected model must support the value and sufficient context must remain. Higher limits permit greater API usage; actual usage is billed by OpenAI. See [OpenAI's reasoning and output-limit guidance](https://developers.openai.com/api/docs/guides/reasoning).
 
