@@ -113,7 +113,9 @@ class RunStore:
             db.execute('BEGIN IMMEDIATE')
             row=db.execute('SELECT record FROM runs WHERE id=?',(run_id,)).fetchone()
             if not row:raise ValueError('Run not found')
-            record=json.loads(row[0]);record.update(values);record['updated']=time.time()
+            record=json.loads(row[0])
+            if record['state'] in TERMINAL and values.get('state',record['state'])!=record['state']:return record
+            record.update(values);record['updated']=time.time()
             db.execute('UPDATE runs SET state=?,updated=?,record=? WHERE id=?',
                        (record['state'],record['updated'],encode(record),run_id))
         return record
@@ -242,7 +244,15 @@ class RunStore:
             db.execute('DELETE FROM events WHERE run_id IN (SELECT id FROM runs WHERE session_id=?)',(session_id,))
             db.execute('DELETE FROM tool_calls WHERE run_id IN (SELECT id FROM runs WHERE session_id=?)',(session_id,))
             db.execute('UPDATE runs SET payload=NULL WHERE session_id=?',(session_id,))
+            for row in db.execute('SELECT id,record FROM runs WHERE session_id=?',(session_id,)).fetchall():
+                record=json.loads(row['record']);record.pop('sources',None);record['artifacts_expired']=True
+                db.execute('UPDATE runs SET record=? WHERE id=?',(encode(record),row['id']))
             db.execute('UPDATE conversations SET archived=1 WHERE id=?',(session_id,))
+
+    def pending_cleanup(self):
+        with self.db() as db:
+            rows=db.execute("SELECT DISTINCT c.app_id,c.id FROM conversations c JOIN resources r ON c.id=r.session_id WHERE c.archived=1 AND r.status!='deletion_confirmed'").fetchall()
+        return [(r['app_id'],r['id']) for r in rows]
 
     def expired(self,now=None):
         now=time.time() if now is None else now;found=[]

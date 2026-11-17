@@ -165,7 +165,7 @@ class OpenAIClient:
 
 
 class Runtime:
-    def __init__(self, data_dir, client=None, registry=None, decisions_client=None, explanation_client=None):
+    def __init__(self, data_dir, client=None, registry=None, decisions_client=None, explanation_client=None, agents_client=None):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.assets = self.data_dir / "assets"
@@ -179,15 +179,40 @@ class Runtime:
         self.client = client or OpenAIClient()
         self.registry = registry or Registry()
         self.lock = threading.RLock()
+        self._managed = None
+        self.agents_client = agents_client
+
+    @property
+    def managed(self):
+        with self.lock:
+            if self._managed is None:
+                from .agents_runtime import ManagedRuntime
+                self._managed = ManagedRuntime(self.data_dir, client=self.agents_client, registry=self.registry)
+            return self._managed
+
+    def managed_store(self):
+        if self._managed is not None:
+            return self._managed.store
+        from .runs import RunStore
+        return RunStore(self.data_dir)
+
+    def close(self):
+        if self._managed is not None:
+            self._managed.close()
 
     def list_sessions(self, app_id):
         with self.lock, closing(sqlite3.connect(self.db_path)) as db, db:
             rows = db.execute("SELECT id,messages FROM sessions WHERE app_id=? ORDER BY rowid DESC", (app_id,)).fetchall()
-        return [{"id": sid, "title": (json.loads(messages)[0]["content"] or
+        records = [{"id": sid, "title": (json.loads(messages)[0]["content"] or
                     ', '.join(item['name'] for item in json.loads(messages)[0].get('attachments', [])))[:70]}
                 for sid, messages in rows]
+        if (self.data_dir / 'managed.sqlite3').exists():
+            records = self.managed_store().list_sessions(app_id) + records
+        return records
 
     def get_session(self, app_id, session_id):
+        if isinstance(session_id, str) and session_id.startswith('managed-'):
+            return self.managed_store().get_session(app_id, session_id)
         with self.lock, closing(sqlite3.connect(self.db_path)) as db, db:
             row = db.execute("SELECT messages FROM sessions WHERE id=? AND app_id=?", (session_id, app_id)).fetchone()
         if not row:
@@ -199,6 +224,9 @@ class Runtime:
         return {"id": session_id, "messages": messages}
 
     def configuration(self, app):
+        if app.get('runtime', {}).get('api') == 'agents':
+            _, tools, names = self.managed.configuration(app)
+            return app['runtime']['model'], tools, names
         validate(app)
         blockers = [i["message"] for i in analyze(app)["issues"] if i["severity"] == "blocker"]
         if blockers:
@@ -257,7 +285,19 @@ class Runtime:
                     raise ValueError("OpenAI response was incomplete or failed; no conversation turn was saved")
         raise ValueError("OpenAI stream ended before completion; no conversation turn was saved")
 
-    def chat(self, app, message, session_id=None, emit=None, attachments=None):
+    def chat(self, app, message, session_id=None, emit=None, attachments=None, submission_id=None):
+        if app.get('runtime', {}).get('api') == 'agents':
+            run = self.managed.start(app, message, session_id, submission_id or uuid.uuid4().hex, attachments)
+            if emit is not None:
+                emit({'type':'task','run':run,'run_id':run['id']})
+            for event in self.managed.observe(app['id'], run['id']):
+                if event['type'] == 'done':
+                    return {key:event[key] for key in ('session_id','message')}
+                if event['type'] == 'error':
+                    raise ValueError(event['error'])
+                if emit is not None:
+                    emit(event)
+            raise ValueError('Managed task is still pending; inspect its saved run')
         files=validate_attachments(attachments)
         if not isinstance(message, str) or (not message.strip() and not files) or len(message) > 16000:
             raise ValueError("Message must contain 1–16000 characters")

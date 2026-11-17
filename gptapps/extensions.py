@@ -11,6 +11,7 @@ class FunctionTool:
     parameters: dict
     handler: Callable
     read_only: bool = True
+    replay_safe: bool = False
 
     def declaration(self):
         return {"type": "function", "name": self.name, "description": self.description,
@@ -50,4 +51,4 @@ def scoring_example(registry):
     registry.add(FunctionTool("cosine_score", "Calculate cosine similarity of two supplied vectors.",
         {"type": "object", "properties": {"left": {"type": "array", "items": {"type": "number"}},
          "right": {"type": "array", "items": {"type": "number"}}},
-         "required": ["left", "right"], "additionalProperties": False}, cosine_score))
+         "required": ["left", "right"], "additionalProperties": False}, cosine_score, replay_safe=True))

@@ -81,6 +81,13 @@ class AgentsClient:
     def search(self,store_id,query):
         return plain(self.sdk.vector_stores.search(store_id,query=query,max_num_results=8))
 
+    def inventory(self,store_id):
+        files=[]
+        for item in self.sdk.vector_stores.files.list(store_id,limit=100):
+            files.append(plain(item))
+            if len(files)>1000:raise ValueError("Knowledge collection inventory exceeds the supported limit")
+        return files
+
     def collection(self,store_id):
         return plain(self.sdk.vector_stores.retrieve(store_id))
 

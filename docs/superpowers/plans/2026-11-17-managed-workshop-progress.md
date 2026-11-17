@@ -14,3 +14,6 @@ Task 1: complete — 11 configuration/provider-contract tests pass; corrected th
 Task 2: complete — 7 durable-run/artifact/tool-ledger tests pass.
 Ruling: SDK 3.13 lacks a typed review keyword although the public API documents it; use the SDK-supported extra_body={review:auto_review} parameter explicitly.
 Task 3: in progress.
+
+Task 3: complete — 18 managed lifecycle tests plus facade integration pass. Includes confirmed cancellation, browser disconnect, restart, ambiguous submission, app-scoped knowledge, validated artifacts, replay-safe tools, single-supervisor locking, deadlines and cleanup retries.
+Task 4: in progress.
