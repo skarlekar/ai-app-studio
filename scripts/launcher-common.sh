@@ -6,6 +6,7 @@ launcher_options() {
   DATA_DIR="${GPTAPPS_DATA_DIR:-$FRAMEWORK_ROOT/.gptapps-data}"
   OPENAI_ROUTING_POLICY_FILE="${OPENAI_ROUTING_POLICY_FILE:-$FRAMEWORK_ROOT/routing-policy.json}"
   OPEN_BROWSER=1
+  AGENTS_ENABLED=0
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --port|--apps|--data|--routing-policy)
@@ -18,8 +19,10 @@ launcher_options() {
         esac
         shift 2 ;;
       --no-browser) OPEN_BROWSER=0; shift ;;
+      --agents) AGENTS_ENABLED=1; shift ;;
       -h|--help)
-        echo "Usage: $0 [--port PORT] [--apps DIRECTORY] [--data DIRECTORY] [--routing-policy FILE] [--no-browser]"
+        echo "Usage: $0 [--port PORT] [--apps DIRECTORY] [--data DIRECTORY] [--routing-policy FILE] [--agents] [--no-browser]"
+        echo "--agents installs the pinned optional SDK in .venv-agents (Docker: in the image)."
         echo "Starts the builder at http://127.0.0.1:PORT. Press Ctrl+C to stop."
         echo "Routing policy: bundled routing-policy.json by default; --routing-policy FILE overrides the environment/default."
         exit 0 ;;
@@ -37,6 +40,18 @@ launcher_options() {
   fi
   PORT=$((10#$PORT))
   URL="http://127.0.0.1:$PORT"
+}
+launcher_agents() {
+  [[ "$AGENTS_ENABLED" == 1 ]] || return 0
+  local agents_venv="${GPTAPPS_AGENTS_VENV:-$FRAMEWORK_ROOT/.venv-agents}"
+  if [[ ! -x "$agents_venv/bin/python" ]]; then
+    "$PYTHON_BIN" -m venv "$agents_venv"
+  fi
+  if ! "$agents_venv/bin/python" -c 'from importlib.metadata import version; from openai.resources.beta.agents import Agents; assert version("openai") == "3.13.0"' 2>/dev/null; then
+    echo "Installing optional Agents support in $agents_venv"
+    "$agents_venv/bin/python" -m pip install --disable-pip-version-check -r "$FRAMEWORK_ROOT/requirements-agents.txt"
+  fi
+  PYTHON_BIN="$agents_venv/bin/python"
 }
 launcher_credentials() {
   if [[ -z "${OPENAI_API_KEY:-}" ]]; then

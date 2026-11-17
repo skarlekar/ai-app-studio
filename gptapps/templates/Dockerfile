@@ -4,6 +4,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     GPTAPPS_PORT=8765
 WORKDIR /app
+COPY requirements.txt /app/requirements.txt
+RUN if [ -s requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi
 
 # Only public source and examples enter the image.
 COPY gptapps/ /app/gptapps/

@@ -1,12 +1,14 @@
 """Local single-user HTTP application. Deploy behind authentication for shared use."""
 import json
+import re
+import os
 import mimetypes
 import io
 import tempfile
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlparse, quote
 
 from .attachments import MAX_REQUEST_BYTES, MAX_FILES as CHAT_MAX_FILES, MAX_FILE_BYTES as CHAT_MAX_FILE_BYTES, MAX_TOTAL_BYTES as CHAT_MAX_TOTAL_BYTES, EXTENSIONS as CHAT_EXTENSIONS
 from .spec import analyze, load, from_chat_input
@@ -17,7 +19,7 @@ from .setup import SetupInterpreter
 from .knowledge import KnowledgeManager, MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES, EXTENSIONS
 
 
-def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="127.0.0.1"):
+def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="127.0.0.1", agents_client=None):
     if builder and not Path(apps_path).is_dir():
         raise ValueError("Conversational setup requires an apps directory")
     paths = [apps_path] if Path(apps_path).is_file() else sorted(Path(apps_path).glob("*.json"))
@@ -30,11 +32,13 @@ def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="12
         app_paths[app["id"]] = Path(path)
     if not apps and not builder:
         raise ValueError("No application specs found")
-    runtime = Runtime(data_dir, registry=registry)
+    runtime = Runtime(data_dir, registry=registry, **({"agents_client":agents_client} if agents_client is not None else {}))
     setup = SetupInterpreter(client=runtime.client) if builder else None
     knowledge = KnowledgeManager(data_dir) if builder else None
     html = Path(__file__).with_name("chat.html").read_bytes()
-    static = {"/static/routing.js": Path(__file__).with_name("routing.js"),
+    static = {"/static/workshop.js": Path(__file__).with_name("workshop.js"),
+              "/static/workshop.css": Path(__file__).with_name("workshop.css"),
+              "/static/routing.js": Path(__file__).with_name("routing.js"),
               "/static/routing.css": Path(__file__).with_name("routing.css"),
               "/static/attachments.js": Path(__file__).with_name("attachments.js"),
               "/static/chat.js": Path(__file__).with_name("chat.js"),
@@ -49,7 +53,7 @@ def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="12
         def log_message(self, *args):
             pass  # Avoid logging query strings or conversation text.
 
-        def send(self, code, data, content_type="application/json"):
+        def send(self, code, data, content_type="application/json", headers=None):
             raw = json.dumps(data).encode() if content_type == "application/json" else data
             self.send_response(code)
             self.send_header("Content-Type", content_type)
@@ -57,6 +61,8 @@ def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="12
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; frame-ancestors 'none'")
+            for name, value in (headers or {}).items():
+                self.send_header(name, value)
             self.end_headers()
             self.wfile.write(raw)
 
@@ -82,11 +88,20 @@ def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="12
                 kind = "image/svg+xml" if url.path.endswith(".svg") else "text/css" if url.path.endswith(".css") else "text/javascript"
                 return self.send(200, static[url.path].read_bytes(), kind + "; charset=utf-8")
             if url.path == "/api/apps":
+                from .evaluation import release_gate
+                def evaluation_status(app):
+                    path=Path(data_dir)/'evaluations'/(app['id']+'.json')
+                    try:return release_gate(app,json.loads(path.read_text()))
+                    except (ValueError,OSError):return {'approved':False,'status':'release_hold','reasons':['Task-specific evaluation and human review are required before production.']}
                 return self.send(200, [{"id": a["id"], "name": a["name"], "description": a["description"],
-                    "starters": a["conversation_starters"], "report": analyze(a)} for a in apps.values()])
+                    "starters": a["conversation_starters"], "evaluation":evaluation_status(a), "runtime": {"api":a["runtime"]["api"],"model":a["runtime"].get("model"),"environment":a["runtime"].get("agents",{}).get("environment")}, "report": analyze(a)} for a in apps.values()])
             if url.path == "/api/config":
                 config = {"builder_enabled": builder, **build_info(), "chat_attachments": {"max_files": CHAT_MAX_FILES,
                     "max_file_bytes": CHAT_MAX_FILE_BYTES,"max_total_bytes": CHAT_MAX_TOTAL_BYTES,"extensions": CHAT_EXTENSIONS}}
+                from .agents_client import sdk_available
+                config['runtimes'] = {'responses':{'available':True}, 'agents':{
+                    'available':agents_client is not None or sdk_available(), 'fixed_only':True,
+                    'environments':['openai_hosted','none'], 'provider_access':'not_verified'}}
                 if builder:
                     try:
                         from .routing import load_policy_file
@@ -97,6 +112,41 @@ def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="12
                     config["knowledge_uploads"] = {"max_files": MAX_FILES, "max_file_bytes": MAX_FILE_BYTES,
                                                    "max_total_bytes": MAX_TOTAL_BYTES, "extensions": EXTENSIONS}
                 return self.send(200, config)
+            if url.path == '/api/runs' or url.path.startswith('/api/runs/') or url.path.startswith('/api/artifacts/') or url.path == '/api/sources':
+                app_id=query.get('app',[''])[0]
+                if app_id not in apps:
+                    return self.send(404, {'error':'Application not found'})
+                try:
+                    store=runtime.managed_store()
+                    if url.path == '/api/runs':
+                        return self.send(200, store.find_submission(app_id, query.get('submission_id',[''])[0]))
+                    match=re.fullmatch(r'/api/runs/([a-f0-9]{32})(/events)?',url.path)
+                    if match:
+                        run=store.get(app_id,match[1])
+                        if not match[2]:return self.send(200,run)
+                        after=int(query.get('after',['0'])[0])
+                        if not 0<=after<=2**63-1:raise ValueError('Invalid event cursor')
+                        self.send_response(200)
+                        self.send_header('Content-Type','text/event-stream; charset=utf-8')
+                        self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff')
+                        self.send_header('Connection','close');self.end_headers();self.close_connection=True
+                        try:
+                            for event in runtime.managed.observe(app_id,run['id'],after):
+                                self.wfile.write(('data: '+json.dumps(event,ensure_ascii=False)+'\n\n').encode());self.wfile.flush()
+                        except (BrokenPipeError,ConnectionResetError,ConnectionAbortedError):pass
+                        return
+                    match=re.fullmatch(r'/api/artifacts/([a-f0-9]{32})/content',url.path)
+                    if match:
+                        artifact=store.artifact_content(app_id,match[1])
+                        return self.send(200,artifact['path'].read_bytes(),'application/octet-stream',
+                            {'Content-Disposition':"attachment; filename*=UTF-8''"+quote(artifact['name'],safe='')})
+                    if url.path == '/api/sources':
+                        run=store.get(app_id,query.get('run',[''])[0]);source_id=query.get('source',[''])[0]
+                        source=next((s for s in run.get('sources',[]) if s['id']==source_id),None)
+                        if not source:raise ValueError('Source not found or expired')
+                        return self.send(200,source)
+                    return self.send(404,{'error':'Not found'})
+                except (ValueError,TypeError):return self.send(404,{'error':'Run, artifact or source not found for this application'})
             if url.path in ("/api/knowledge", "/api/knowledge/status"):
                 if not builder:
                     return self.send(403, {"error": "Knowledge uploads are disabled in this standalone app"})
@@ -147,7 +197,7 @@ def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="12
             url = urlparse(self.path)
             path = url.path
             knowledge_paths = ("/api/knowledge", "/api/knowledge/file", "/api/knowledge/index", "/api/knowledge/bind")
-            if path not in ("/api/chat", "/api/apps", "/api/setup", *knowledge_paths):
+            if path not in ("/api/chat", "/api/apps", "/api/setup", "/api/runs", "/api/runtime/check", "/api/sessions/cleanup", *knowledge_paths) and not re.fullmatch(r"/api/runs/[a-f0-9]{32}/(?:cancel|reconcile)",path):
                 return self.send(404, {"error": "Not found"})
             if path in knowledge_paths and not builder:
                 return self.send(403, {"error": "Knowledge uploads are disabled in this standalone app"})
@@ -173,7 +223,7 @@ def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="12
 
             try:
                 length = int(self.headers.get("Content-Length", "0"))
-                if not 0 < length <= (MAX_FILE_BYTES if binary else MAX_REQUEST_BYTES if path in ("/api/chat","/api/setup") else 1500000):
+                if not 0 < length <= (MAX_FILE_BYTES if binary else MAX_REQUEST_BYTES if path in ("/api/chat","/api/setup","/api/runs") else 1500000):
                     raise ValueError("Invalid request size")
                 raw = self.rfile.read(length)
                 if len(raw) != length:
@@ -212,12 +262,32 @@ def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="12
                         apps[app_id] = updated
                         knowledge.claim(body.get("upload_id"), app_id)
                     return self.send(200, {"id": app_id, "report": analyze(updated)})
+                if path == '/api/runtime/check':
+                    if not builder:return self.send(403,{'error':'Setup is disabled'})
+                    app=from_chat_input(body);report=analyze(app)
+                    if app['runtime']['api']=='agents':runtime.managed.configuration(app)
+                    from .agents_client import sdk_available
+                    return self.send(200,{'report':report,'sdk_available':agents_client is not None or sdk_available(),
+                        'credentials_present':bool(os.environ.get('OPENAI_API_KEY')),'provider_access':'not_verified'})
+                if path == '/api/runs' or re.fullmatch(r'/api/runs/[a-f0-9]{32}/(?:cancel|reconcile)',path) or path == '/api/sessions/cleanup':
+                    if not isinstance(body,dict) or body.get('app_id') not in apps:raise ValueError('Unknown application')
+                    app=apps[body['app_id']]
+                    if app['runtime']['api']!='agents':raise ValueError('This route requires the Agents runtime')
+                    if path == '/api/runs':
+                        run=runtime.managed.start(app,body.get('message'),body.get('session_id'),body.get('submission_id'),body.get('attachments'))
+                        return self.send(202,run)
+                    if path == '/api/sessions/cleanup':
+                        if body.get('confirm') is not True:raise ValueError('Explicit cleanup confirmation is required')
+                        return self.send(200,runtime.managed.cleanup(app['id'],body.get('session_id')))
+                    run_id=path.split('/')[3]
+                    result=runtime.managed.cancel(app['id'],run_id) if path.endswith('/cancel') else runtime.managed.reconcile(app['id'],run_id)
+                    return self.send(200,result)
                 if path == "/api/setup":
                     if not builder:
                         return self.send(403, {"error": "Application setup is disabled in this standalone app"})
                     if not isinstance(body, dict):
                         raise ValueError("Setup request must be an object")
-                    return self.send(200, setup.interpret(body.get("field"), body.get("message"), body.get("history"), attachments=body.get("attachments")))
+                    return self.send(200, setup.interpret(body.get("field"), body.get("message"), body.get("history"), attachments=body.get("attachments"), runtime_api=body.get("runtime_api","responses")))
                 if path == "/api/apps":
                     if not builder:
                         return self.send(403, {"error": "Application setup is disabled in this standalone app"})
@@ -243,10 +313,10 @@ def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="12
                 if type(body.get("stream", False)) is not bool:
                     raise ValueError("stream must be a boolean")
                 if body.get("stream"):
-                    result = runtime.chat(apps[body["app_id"]], body.get("message"), sid, emit=event, attachments=body.get("attachments"))
+                    result = runtime.chat(apps[body["app_id"]], body.get("message"), sid, emit=event, attachments=body.get("attachments"), submission_id=body.get("submission_id"))
                     event({"type": "done", **result})
                 else:
-                    result = runtime.chat(apps[body["app_id"]], body.get("message"), sid, attachments=body.get("attachments"))
+                    result = runtime.chat(apps[body["app_id"]], body.get("message"), sid, attachments=body.get("attachments"), submission_id=body.get("submission_id"))
                     self.send(200, result)
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 pass  # A disconnected client must not trigger a second response or keep its model stream open.
@@ -272,6 +342,10 @@ def serve(apps_path, data_dir, port=8765, registry=None, builder=False, host="12
     server = ThreadingHTTPServer((host, port), Handler)
     print(f"Open http://127.0.0.1:{port} — {len(apps)} application(s). Press Ctrl+C to stop.", flush=True)
     try:
+        if any(a['runtime']['api']=='agents' for a in apps.values()) and (Path(data_dir)/'managed.sqlite3').exists():
+            runtime.managed.recover()
+            runtime.managed.maintenance()
         server.serve_forever()
     finally:
         server.server_close()
+        runtime.close()

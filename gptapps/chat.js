@@ -42,13 +42,15 @@ function updateChrome(){
  document.title=wizard?'Create an application · App Studio':current?.name||'App Studio';
  updateKnowledgePanel();
  updateModelChoices();
+ if(typeof updateRuntimeChoices==='function')updateRuntimeChoices();
 }
 function updateModelChoices(){
  const visible=!!wizard&&steps[wizard.step]?.key==='model',working=busy||knowledgeBusy;
  $('model-choices').hidden=!visible;
- $('model-auto').disabled=working||!routingAvailable;$('model-fixed').disabled=working;
- $('model-routing-help').textContent=routingAvailable?'Auto selects an approved answer model for each turn using the configured cost-first policy. Fixed uses the server default; enter a model ID below to choose a specific fixed model.':routingError||'Auto requires a configured routing policy. Fixed uses the server default; you can also enter a specific model ID.';
- $('model-auto').onclick=()=>{if(!visible||working||!routingAvailable)return;setInput('auto');$('form').requestSubmit();};
+ const agents=wizard?.draft?.api==='agents';
+ $('model-auto').hidden=agents;$('model-auto').disabled=agents||working||!routingAvailable;$('model-fixed').disabled=working;$('model-fixed').hidden=agents;
+ $('model-routing-help').textContent=agents?'Agents requires an explicit fixed model ID. Type an available model ID below. The workspace and model stay fixed for this conversation.':routingAvailable?'Auto selects an approved answer model for each turn using the configured cost-first policy. Fixed uses the server default; enter a model ID below to choose a specific fixed model.':routingError||'Auto requires a configured routing policy. Fixed uses the server default; you can also enter a specific model ID.';
+ $('model-auto').onclick=()=>{if(!visible||working||agents||!routingAvailable)return;setInput('auto');$('form').requestSubmit();};
  $('model-fixed').onclick=()=>{if(!visible||working)return;setInput('default');$('form').requestSubmit();};
 }
 function renderMarkdown(body, text) {
@@ -80,8 +82,9 @@ function message(m){
  if(m.attachments?.length){const files=element('ul',undefined,'message-files');files.setAttribute('aria-label','Message attachments');for(const file of m.attachments)files.append(element('li',file.name+' · '+(file.size/1024).toFixed(1)+' KiB'));box.append(files);}
  for(const asset of m.assets||[]){const img=element('img');img.src='/assets/'+encodeURIComponent(asset);img.alt='Generated image';box.append(img);}
  const sources=element('div',undefined,'sources');
- for(const source of m.citations||[]){let el;if(/^https?:\/\//i.test(source.url||'')){el=element('a',source.title);el.href=source.url;el.target='_blank';el.rel='noopener noreferrer';}else el=element('span',source.title);sources.append(el);}
+ for(const source of m.citations||[]){let el;let url=/^https?:\/\//i.test(source.url||'')?source.url:null;if(!source.expired&&source.source_id&&source.run_id&&typeof sourceUrl==='function'){try{url=sourceUrl(current.id,source.run_id,source.source_id);}catch{}}el=element(url?'a':'span',source.title);if(url){el.href=url;el.target='_blank';el.rel='noopener noreferrer';}sources.append(el);}
  box.append(sources);
+ if(typeof workshopArtifacts==='function')workshopArtifacts(m,box);
  if(m.role==='assistant'&&m.incomplete_reason==='max_output_tokens'){
   const notice=element('div',undefined,'response-notice');notice.setAttribute('role','note');
   notice.append(element('p','This answer reached its length limit. Your partial answer is saved. Continue to ask for the next part.'));
@@ -95,8 +98,8 @@ function message(m){
  }
  $('messages').append(box);updateContinueButtons();scrollChat(true);return box;
 }
-async function streamChat(payload,onEvent){
- const response=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json','Accept':'text/event-stream'},body:JSON.stringify({...payload,stream:true})});
+async function streamChat(payload,onEvent,managedPath=null,signal=null){
+ const response=await fetch(managedPath||'/api/chat',managedPath?{headers:{'Accept':'text/event-stream'},signal}:{method:'POST',headers:{'Content-Type':'application/json','Accept':'text/event-stream'},body:JSON.stringify({...payload,stream:true})});
  if(!response.ok){const data=await response.json();throw new Error(data.error||'Request failed');}
  if(!response.body||!response.headers.get('Content-Type')?.includes('text/event-stream'))throw new Error('The server did not return a chat stream. Restart the server and refresh this page.');
  const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
@@ -118,6 +121,7 @@ async function streamChat(payload,onEvent){
  }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
 }
 async function sendChat(text){
+ if(current?.runtime?.api==='agents')return sendManaged(text);
  routingBegin();const selectedFiles=[...chatFiles];
  $('welcome')?.remove();const oldCount=$('messages').children.length;
  message({role:'user',content:text,attachments:selectedFiles});setInput('');loading(true);
@@ -160,8 +164,8 @@ function welcome(){
  box.append(starters);box.append(element('div','Pick a starting point, or make the conversation your own.','welcome-footnote'));
  $('messages').replaceChildren(box);
 }
-async function sessions(){const records=await api('/api/sessions?app='+encodeURIComponent(current.id));$('sessions').replaceChildren();if(!records.length)$('sessions').append(element('div','No conversations yet','empty'));for(const item of records){const button=element('button',item.title,'session'+(item.id===sid?' active':''));button.title=item.title;button.disabled=busy;button.onclick=async()=>{routingClear();try{const saved=await api('/api/sessions?app='+encodeURIComponent(current.id)+'&id='+encodeURIComponent(item.id));clearChatFiles();setInput('');sid=saved.id;$('messages').replaceChildren();saved.messages.forEach(message);routingRestore(saved.messages);closeHistory();await sessions()}catch(e){showError(e)}};$('sessions').append(button)}}
-async function start(){routingClear();clearChatFiles();setInput('');closeHistory();wizard=null;resetKnowledge();sid=null;$('input').maxLength=16000;$('error').textContent='';$('apps').disabled=false;updateChrome();welcome();await sessions();$('input').focus()}
+async function sessions(){const records=await api('/api/sessions?app='+encodeURIComponent(current.id));$('sessions').replaceChildren();if(!records.length)$('sessions').append(element('div','No conversations yet','empty'));for(const item of records){const button=element('button',item.title,'session'+(item.id===sid?' active':''));button.title=item.title;button.disabled=busy;button.onclick=async()=>{routingClear();try{const saved=await api('/api/sessions?app='+encodeURIComponent(current.id)+'&id='+encodeURIComponent(item.id));clearChatFiles();setInput('');sid=saved.id;$('messages').replaceChildren();saved.messages.forEach(message);routingRestore(saved.messages);closeHistory();await sessions();if(typeof workshopRestore==='function'){workshopDetach();workshopRestore(saved).catch(showError);}}catch(e){showError(e)}};$('sessions').append(button)}}
+async function start(resumeManaged=true){if(typeof workshopDetach==='function')workshopDetach();routingClear();clearChatFiles();setInput('');closeHistory();wizard=null;resetKnowledge();sid=null;$('input').maxLength=16000;$('error').textContent='';$('apps').disabled=false;updateChrome();welcome();await sessions();$('input').focus();if(resumeManaged&&typeof workshopRecover==='function')workshopRecover();}
 function loading(value){busy=value;$('send').disabled=value;$('apps').disabled=value||!!wizard;$('new').disabled=value;$('create').disabled=value;$('input').disabled=value;document.querySelectorAll('.session').forEach(b=>b.disabled=value);$('status').textContent=value?'Working…':'Ready';$('status').dataset.state=value?'busy':'ready';updateChrome()}
 const steps=[
  {key:'name',question:'What is the name of your application?'},
@@ -169,15 +173,17 @@ const steps=[
  {key:'instructions',question:'Paste your GPT’s full instructions, or attach a UTF-8 text/Markdown file. I will preserve them as application configuration. Do not include API keys, passwords or credentials.'},
  {key:'starters',question:'Enter conversation starters, one per line (up to 12), or type none.'},
  {key:'tools',question:'Which capabilities / tool settings should be enabled? Choose web search, image generation, code interpreter, any combination, all, or none. Availability depends on the model.'},
+ {key:'api',question:'Choose the execution runtime: Responses API keeps application-managed orchestration. Agents API uses an OpenAI-managed session and can use a workspace for multi-step tasks and deliverables. This is separate from model selection.'},
  {key:'model',question:'Choose Auto — cost-first to select an approved answer model for each turn, or Fixed — server default. You can also enter a specific OpenAI model ID, type auto, or type default. Auto requires a configured routing policy. This setting is separate from the server model used for setup.'},
  {key:'knowledge_files',question:'Choose your knowledge files in the upload panel, upload and index them, then select Use these files. You can select multiple documents. If your GPT has no knowledge files, type none.'},
  {key:'actions',question:'Type none, paste your Actions as a JSON array, or attach the actual JSON file. Each Action needs name, auth_type (none, api_key, oauth), and schema (an OpenAPI JSON object). Include definitions only, never credentials.\n\nExample:\n[{"name":"Lookup","auth_type":"none","schema":{"openapi":"3.1.0","info":{"title":"Lookup","version":"1.0"},"paths":{}}}]\n\nActions need reviewed backend adapters before execution.'}
 ];
 function setupMessage(text,role='assistant'){message({role,content:text})}
-function beginSetup(){routingClear();clearChatFiles();resetKnowledge();closeHistory();wizard={step:0,draft:{},history:[]};sid=null;$('messages').replaceChildren();$('sessions').replaceChildren();$('name').textContent='Create an application';$('error').textContent='';setInput('');$('input').maxLength=1000000;$('apps').disabled=true;setupMessage('Tell me about your GPT. I’ll interpret your answers and ask when something is unclear; you’ll review everything before creating the app.');setupMessage(steps[0].question);updateChrome();$('input').focus()}
-function previousSetupStep(){clearChatFiles();wizard.step=Math.max(0,wizard.step-1);wizard.history=[];updateChrome();setupMessage(steps[wizard.step].question)}
+function setupQuestion(){return steps[wizard.step]?.key==='model'&&wizard.draft.api==='agents'?'Enter an explicit fixed OpenAI model ID with Agents access, for example gpt-6-astra if available in your project. Auto routing and the server-default model are not supported for Agents.':steps[wizard.step].question;}
+function beginSetup(){if(typeof workshopDetach==='function')workshopDetach();routingClear();clearChatFiles();resetKnowledge();closeHistory();wizard={step:0,draft:{},history:[]};sid=null;$('messages').replaceChildren();$('sessions').replaceChildren();$('name').textContent='Create an application';$('error').textContent='';setInput('');$('input').maxLength=1000000;$('apps').disabled=true;setupMessage('Tell me about your GPT. I’ll interpret your answers and ask when something is unclear; you’ll review everything before creating the app.');setupMessage(steps[0].question);updateChrome();$('input').focus()}
+function previousSetupStep(){clearChatFiles();wizard.step=Math.max(0,wizard.step-1);wizard.history=[];updateChrome();setupMessage(setupQuestion())}
 async function cancelSetup(){if(current)await start();else emptyWorkspace()}
-function reviewDraft(){const d=wizard.draft;setupMessage('Review your application:\n\nName: '+d.name+'\nDescription: '+(d.description||'None')+'\nInstructions: '+d.instructions.length+' characters, preserved as entered\nStarters: '+(d.starters.join(' | ')||'None')+'\nCapabilities / tools: '+(d.tools.join(', ')||'None')+'\nModel: '+(d.model==='auto'?'Auto — cost-first':d.model||'Fixed — server default')+'\nKnowledge files: '+(d.knowledge_files.join(', ')||'None')+'\nActions: '+(d.actions.map(a=>a.name+' ('+a.auth_type+')').join(', ')||'None')+'\n\nType create to save, back to revise Actions, or cancel to leave setup.');}
+function reviewDraft(){const d=wizard.draft;setupMessage('Review your application:\n\nName: '+d.name+'\nDescription: '+(d.description||'None')+'\nInstructions: '+d.instructions.length+' characters, preserved as entered\nStarters: '+(d.starters.join(' | ')||'None')+'\nCapabilities / tools: '+(d.tools.join(', ')||'None')+'\nRuntime: '+(d.api==='agents'?'Agents API — OpenAI managed':'Responses API — application managed')+'\nModel: '+(d.model==='auto'?'Auto — cost-first':d.model||'Fixed — server default')+'\nKnowledge files: '+(d.knowledge_files.join(', ')||'None')+'\nActions: '+(d.actions.map(a=>a.name+' ('+a.auth_type+')').join(', ')||'None')+'\n\nType create to save, back to revise Actions, or cancel to leave setup.');}
 async function saveDraft(){
  const created=await api('/api/apps',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(wizard.draft)});
  apps=await api('/api/apps');$('apps').replaceChildren();
@@ -196,7 +202,7 @@ async function intake(text){
   const field=steps[wizard.step]?.key||'review';
   const attachments=await chatFilePayload(chatFiles);
   const selectedFiles=[...chatFiles];
-  const result=await api('/api/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({field,message:text,history:wizard.history,attachments})});
+  const result=await api('/api/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({field,message:text,history:wizard.history,attachments,runtime_api:wizard.draft.api||'responses'})});
   message({role:'user',content:text,attachments:selectedFiles});
   if(result.status==='clarify'){
    wizard.history=[...wizard.history,{role:'user',content:text},{role:'assistant',content:result.message}].slice(-8);
@@ -212,14 +218,14 @@ async function intake(text){
    if(result.value.length){wizard.draft.knowledge_files=result.value;const prompt='Choose these documents in the upload panel, upload and index them, then select Use these files.';setupMessage(prompt);$('knowledge-guidance').textContent=prompt;$('knowledge-guidance').hidden=false;return;}
   }
   wizard.draft[field]=result.value;setupMessage(result.message);wizard.step++;updateChrome();
-  if(wizard.step===steps.length)reviewDraft();else setupMessage(steps[wizard.step].question)
+  if(wizard.step===steps.length)reviewDraft();else setupMessage(setupQuestion())
  }finally{loading(false);$('input').focus()}
 }
 async function downloadSpec(){try{const config=await api('/api/spec?app='+encodeURIComponent(current.id));const url=URL.createObjectURL(new Blob([JSON.stringify(config,null,2)],{type:'application/json'}));const link=element('a');link.href=url;link.download=current.id+'.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(e){showError(e)}}
 const createButton=element('button');createButton.append(icon('plus'),element('span','Create application'));createButton.id='create';createButton.hidden=true;createButton.onclick=()=>{if(!busy&&!wizard)beginSetup();};$('new').before(createButton);
 const exportButton=element('button');exportButton.append(icon('download'),element('span','Download standalone app'));exportButton.id='download';exportButton.hidden=true;exportButton.onclick=async()=>{if(!current)return showError(new Error('Create an application first.'));try{const response=await fetch('/api/build?app='+encodeURIComponent(current.id));if(!response.ok)throw new Error('Application packaging failed');const url=URL.createObjectURL(await response.blob());const link=element('a');link.href=url;link.download=current.id+'-app.zip';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(error){showError(error)}};$('new').after(exportButton);
 const knowledgeButton=element('button');knowledgeButton.append(icon('layers'),element('span','Knowledge files'));knowledgeButton.id='knowledge-open';knowledgeButton.hidden=true;knowledgeButton.onclick=()=>{if(!busy&&!knowledgeBusy&&!wizard&&current){knowledgeMode=true;closeHistory();updateChrome();}};$('download').after(knowledgeButton);
-$('new').onclick=()=>{if(current)start().catch(showError);else beginSetup();};
+$('new').onclick=()=>{if(current)start(false).catch(showError);else beginSetup();};
 $('apps').onchange=()=>{current=apps.find(a=>a.id===$('apps').value);$('name').textContent=current.name;start().catch(showError)};
 $('input').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('form').requestSubmit()}};
 $('form').onsubmit=async e=>{
@@ -227,10 +233,12 @@ $('form').onsubmit=async e=>{
  if(wizard){setInput('');try{await intake(steps[wizard.step]?.key==='instructions'?raw:text);}catch(error){setInput(raw);showError(error);}return;}
  await sendChat(text);
 };
+$('managed-cleanup').onclick=()=>workshopCleanup();
+$('runtime-compatibility').onclick=async()=>{if(!wizard)return;try{const draft={...wizard.draft,name:wizard.draft.name||'Draft',instructions:wizard.draft.instructions||'Draft',model:$('input').value.trim()||wizard.draft.model};const result=await api('/api/runtime/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(draft)});setupMessage('Configuration check: '+(result.report.runtime_ready?'no manifest blockers.':result.report.issues.map(i=>i.message).join(' '))+' Provider access is not verified by this check. '+(result.sdk_available?'':'Install optional Agents support to run it inside Studio.'));}catch(e){showError(e);}};
 $('input').addEventListener('input',resizeComposer);
 $('setup-back').onclick=()=>{if(wizard&&!busy&&!knowledgeBusy&&wizard.step>0)previousSetupStep();};
 $('setup-cancel').onclick=()=>{if(!busy&&!knowledgeBusy)cancelSetup().catch(showError);};
 $('history-toggle').onclick=()=>{const open=document.querySelector('aside').classList.toggle('history-open');$('history-toggle').setAttribute('aria-expanded',String(open));};
 initKnowledge();
 initChatAttachments();
-(async()=>{try{const config=await api('/api/config');$('release-info').textContent='Version '+config.version+' · Build '+config.build;builderEnabled=config.builder_enabled;routingAvailable=config.routing_available===true;routingError=typeof config.routing_error==='string'?config.routing_error.slice(0,500):'';chatFileLimits=config.chat_attachments||chatFileLimits;$('chat-files').accept=chatFileLimits.extensions.join(',');knowledgeLimits=config.knowledge_uploads||{};$('create').hidden=!config.builder_enabled;$('download').hidden=!config.builder_enabled;$('knowledge-open').hidden=!config.builder_enabled;apps=await api('/api/apps');for(const app of apps){const option=element('option',app.name);option.value=app.id;$('apps').append(option)}current=apps[0];if(!current){if(config.builder_enabled)beginSetup();else throw new Error('No applications configured.')}else{$('name').textContent=current.name;await start()}}catch(error){showError(error);$('send').disabled=true}})();
+(async()=>{try{const config=await api('/api/config');$('release-info').textContent='Version '+config.version+' · Build '+config.build;builderEnabled=config.builder_enabled;runtimeAvailability=config.runtimes||{};routingAvailable=config.routing_available===true;routingError=typeof config.routing_error==='string'?config.routing_error.slice(0,500):'';chatFileLimits=config.chat_attachments||chatFileLimits;$('chat-files').accept=chatFileLimits.extensions.join(',');knowledgeLimits=config.knowledge_uploads||{};$('create').hidden=!config.builder_enabled;$('download').hidden=!config.builder_enabled;$('knowledge-open').hidden=!config.builder_enabled;apps=await api('/api/apps');for(const app of apps){const option=element('option',app.name);option.value=app.id;$('apps').append(option)}current=apps[0];if(!current){if(config.builder_enabled)beginSetup();else throw new Error('No applications configured.')}else{$('name').textContent=current.name;await start()}}catch(error){showError(error);$('send').disabled=true}})();

@@ -9,7 +9,7 @@ Explore the [AI App Studio companion page](https://ai-app-studio-introduction.pe
 **Status:** local, single-user prototype. The framework provides configuration migration and a shared runtime. It does not guarantee identical behavior to the original GPT or provide production hosting.
 
 - **Python:** 3.11+; the Docker image includes Python 3.13.
-- **Runtime dependencies:** Python standard library only; browser Markdown/sanitizer libraries are bundled locally.
+- **Runtime dependencies:** Responses uses the Python standard library; optional Agents support pins `openai==3.13.0`; browser Markdown/sanitizer libraries are bundled locally.
 - **License:** [MIT](LICENSE).
 
 ## Contents
@@ -19,6 +19,7 @@ Explore the [AI App Studio companion page](https://ai-app-studio-introduction.pe
 - [Quick start](#quick-start)
 - [Run with Docker](#run-with-docker)
 - [Configuration](#configuration)
+- [Managed Workshop: optional Agents runtime](#managed-workshop-optional-agents-runtime)
 - [Auto — cost-first routing](#auto--cost-first-routing)
 - [Ways to use the framework](#ways-to-use-the-framework)
 - [Run a generated application](#run-a-generated-application)
@@ -39,7 +40,17 @@ Explore the [AI App Studio companion page](https://ai-app-studio-introduction.pe
 
 ## Release notes
 
-### 0.2.2 — 2026-11-15 (latest)
+### 0.3.0 — 2026-11-17 (feature branch)
+
+- **Two explicit runtimes:** keep Responses with Fixed/Auto routing, or select Agents API with a fixed model and an optional OpenAI-hosted workspace. Setup can suggest a runtime; owners confirm the choice. Legacy apps keep their existing behavior.
+- **Managed work:** durable submission/run IDs, browser-independent execution, saved progress events, reconnection, restart reconciliation, confirmed cancellation and deadlines. Unknown outcomes are surfaced without silently resubmitting paid work.
+- **Reviewable deliverables:** stage chat inputs, bridge app-bound knowledge through Vector Stores Search, execute explicitly replay-safe read tools, and validate completed-turn artifact downloads with ownership/path/size limits.
+- **Portable optional dependencies:** `./start.sh --agents` uses a dedicated virtual environment; `./docker-start.sh --agents` includes the pinned SDK in the image. Agents exports automatically carry their dependency metadata and launch support. Both runtimes retain the bottom-left version/build.
+- **Lifecycle and evaluation:** seven inactive days of managed session/artifact retention by default, explicit owned-resource cleanup, retryable remote deletion, private comparison reports and a human-reviewed release check. Development chat/downloads stay experimental; mock tests do not certify model quality.
+
+See [Managed Workshop](docs/managed-workshop.md) for configuration, provider permissions, recovery, limits, APIs and evaluation commands. This branch does not change the default runtime or introduce a frontend-code-generating agent.
+
+### 0.2.2 — 2026-11-15
 
 - **Prompt-specific routing explanations:** the sidebar describes the actual requested task and its demands, alongside the server's model-selection rule, instead of only showing “Required effort classified.”
 - **Separate assessment and policy facts:** Decisions still classifies effort/task. After a normal classification, one bounded Responses request creates a brief public assessment; it cannot change the chosen model. Fixed, sole-candidate and fallback selections keep their factual policy reasons without this extra call.
@@ -86,6 +97,7 @@ Explore the [AI App Studio companion page](https://ai-app-studio-introduction.pe
 | Chat | Streams live responses and renders Markdown, with local conversations, attachments, citations, generated images, and selected hosted tools |
 | Optional model routing | Selects a policy-approved answer model per turn, with visible reasons and separate routing/answer usage |
 | Knowledge files | Uploads multiple selected documents to OpenAI, indexes a vector store, and binds a fully ready collection to an app |
+| Optional managed execution | Explicit Agents sessions, task recovery and validated downloadable artifacts |
 | Backend extensions | Calls explicitly registered, read-only Python functions |
 | Local and Docker launchers | Starts the builder, waits for readiness, and opens the correct browser URL |
 
@@ -286,6 +298,22 @@ A fixed app can set `runtime.model` in its manifest to override `OPENAI_MODEL`. 
 
 Importing JSON, analyzing manifests, and building application folders work without API credentials. Plain `serve` can also start without them, but live setup interpretation and app chat will fail until the required server environment is configured.
 
+## Managed Workshop: optional Agents runtime
+
+Responses remains the default. Choose Agents when the application needs managed multi-step work, a persistent workspace and downloadable results. Runtime choice and model routing are separate: **Agents initially requires one explicit fixed model**; Decisions Auto remains on Responses. Knowledge files and Actions do not automatically change runtimes.
+
+```sh
+./start.sh --agents
+# Or use the Python 3.13 Docker image with the optional SDK included:
+./docker-start.sh --agents
+```
+
+The local launcher installs `openai==3.13.0` in `.venv-agents`; normal Responses launches need no third-party Python packages. In setup choose **Agents API**, a supported fixed model (the official quickstart demonstrates `gpt-6-astra`), and **OpenAI-hosted workspace** or capability-limited **No workspace**. Confirm model access in your project. The key remains server-side. The hosted sandbox has network access disabled, automatic review, no Studio credentials and no external write adapters.
+
+The shared UI shows task progress, saved execution receipts, safe download cards and release readiness. Reattach after a browser disconnect; leaving the browser does not cancel provider work. Seven-day inactive retention and explicit cleanup affect owned runtime resources, while shared knowledge stays intact. Agents data is stored in managed OpenAI sessions as well as private local records.
+
+Read the [complete Managed Workshop guide](docs/managed-workshop.md) for the manifest example, fixed-model restrictions, app-scoped knowledge bridge, replay-safe tool registration, artifact limits, cancel/restart/unknown-outcome behavior, standalone launch examples and owner-reviewed evaluation gate. The first release is experimental; source-code generation, Agents Auto, multi-agent work and the private SSO experience designer are deferred.
+
 ## Auto — cost-first routing
 
 Auto is an app-owner choice for application chat in both Studio and generated apps. Existing and imported apps stay fixed unless their owner explicitly adds a routing policy. Selecting Auto during creation does not route the generator's setup interpreter.
@@ -413,6 +441,8 @@ Replace `APP_ID` with the actual manifest filename. For a chat-created app, use 
 [plugin/](plugin/) contains an optional migration skill and plugin manifest for a compatible host. It orchestrates collection, import, review, and generation using this framework. It is not installed or published by the repository and does not provide a hosted MCP server or private ChatGPT API scraper. Browser-assisted collection depends on the host's separate browser tools and signed-in session.
 
 ## Run a generated application
+
+**Agents exports:** use the same launch commands below. `start.sh` automatically installs the pinned SDK in `.venv-agents`; Docker installs the export’s `requirements.txt` in its Python image. For manual startup, create a virtual environment and install `requirements.txt` first. Agents needs an explicit model and compatible project permissions; it does not use the Auto router. See the [standalone examples](docs/managed-workshop.md#standalone-applications).
 
 Each generated folder or ZIP includes its own source code, README, Python launcher, and Docker launcher. You can move the entire folder to another computer; it does not need this framework checkout or access to the GPT in ChatGPT. The generated launchers start the **end-user app**, with builder controls and setup interpretation disabled.
 
@@ -574,7 +604,14 @@ flowchart TD
     Uploader --> Metadata[(Local upload metadata and provider IDs<br/>No document bytes)]
     Poll --> Metadata
     Review --> Spec
-    Spec --> Studio[Studio app chat: shared runtime]
+    Spec --> RuntimeChoice{Explicit runtime}
+    RuntimeChoice -->|Responses| Studio[Studio app chat: Responses runtime]
+    RuntimeChoice -->|Agents fixed model| Managed[Durable managed run supervisor]
+    Managed --> Sessions[Agents API sessions and hosted workspace]
+    Sessions --> ManagedStatus[Task timeline, artifacts and execution receipt]
+    Managed --> Ledger[(SQLite intents, events and tool results)]
+    Spec --> Quality[Private behavioral comparison and human review]
+    Quality --> Release[Release hold until current evaluation passes]
     Studio --> Evidence[Auto: bounded text and attachment metadata]
     Evidence --> Filter[Policy capability/context/output filter]
     Filter -->|Several eligible| Decisions[Decisions API: effort and task choices]
@@ -589,11 +626,13 @@ flowchart TD
     Spec --> Report[Compatibility analysis]
     Spec --> Package[Standalone folder / ZIP]
     Report --> Package
+    Release --> Package
+    Package --> Dependencies[Runtime-specific requirements and local/Docker launchers]
 ```
 
 The AI interpreter has no file-system, Action, or execution tools; explicitly attached documents are available as input content. It returns a proposed value for the current step or a clarification/navigation intent. The separate uploader forwards explicitly selected files using the server's API key, creates a vector store and batch, and checks indexing status. **Use these files** attaches only a ready collection to the reviewed draft; **Use files for this app** updates an existing app's knowledge binding. An indexing failure leaves an existing binding unchanged.
 
-Framework launchers load the bundled starter policy automatically unless overridden; the owner still chooses Auto or Fixed during setup. Auto embeds only a validated nonsecret policy snapshot. The setup interpreter is never recursively routed; Studio's application-chat path uses the same router/Responses runtime as an export. Fixed mode bypasses Decisions and request-assessment generation. The full chat input reaches the answering model after selection; the bounded evidence pass is separate.
+Framework launchers load the bundled starter policy automatically unless overridden; the owner still chooses Auto or Fixed during setup. Auto embeds only a validated nonsecret policy snapshot. The setup interpreter is never recursively routed; Studio and exports use the same explicitly selected runtime adapter. Fixed mode bypasses Decisions and request-assessment generation. The full chat input reaches the answering model after selection; the bounded evidence pass is separate.
 
 Server validation runs before accepting settings; the final user instruction triggers app creation. Setup interpretation does not persist its own server conversation. Upload metadata persists locally for recovery, while document contents and the indexed vector store live in the OpenAI project. The ZIP includes the vector store ID and filenames, with no source documents, per-file upload metadata, upload-state files, or local conversation database. Packaging uses a runtime-file allowlist even if a custom data directory is nested under the source package.
 
@@ -606,7 +645,20 @@ flowchart TD
     Manifest[(app.json: instructions, tools, bindings<br/>Fixed model OR embedded Auto policy)] --> Runtime
     Environment[Server environment: OpenAI API key] --> Runtime
     Runtime <--> SQLite[(Local SQLite conversations, attachments<br/>and compact routing records)]
-    Runtime --> Mode{App mode}
+    Runtime --> Adapter{Explicit runtime}
+    Adapter -->|Responses| Mode{Model policy}
+    Adapter -->|Agents fixed model| Supervisor[Durable supervisor and submission dedup]
+    Supervisor <--> Runs[(Managed SQLite runs, events and tool results)]
+    Supervisor <--> Agents[OpenAI Agents API sessions and turns]
+    Agents <--> Sandbox[Hosted workspace: network disabled]
+    Agents --> Function[Approved replay-safe read tools]
+    Function --> Search[App-bound Vector Stores Search]
+    Search <--> Knowledge
+    Agents --> Artifacts[Completed-turn artifacts]
+    Artifacts --> SafeFiles[Validate ownership, path, type and size]
+    SafeFiles --> Downloads[(Private local artifacts)]
+    Supervisor --> ManagedUI[Task timeline, receipts, reattach and downloads]
+    ManagedUI --> HTTP
     Mode -->|Fixed| Pin[Pin one answer model for this turn<br/>including function-call rounds]
     Mode -->|Auto| Evidence[Bounded text/excerpts and file metadata<br/>PDF/Office/image contents excluded]
     Evidence --> Filter[Policy input/tool/context/output filter]
@@ -635,7 +687,7 @@ flowchart TD
 
 Each saved conversation is bound to its app ID and a configuration fingerprint: fixed apps include the effective model; Auto apps include the policy snapshot rather than the model chosen per turn. A changed app/policy or fixed model requires a new conversation, while unchanged Auto policies can select different models across turns. Previous user and assistant text, plus saved chat attachments, are replayed to the API with `store: false`. Chat attachment bytes remain in local private SQLite history; session UI responses expose names, MIME types and sizes only.
 
-The generated app is self-contained: it reads the saved manifest and does not need the framework running or, for Auto, the original policy file. Its bundled router classifies bounded evidence through Decisions; original files go to the answering Responses request. The optional prompt-specific assessment and authoritative selection/fallback reasons remain visible in Routing status and saved history. When knowledge is bound, its Responses request declares `file_search` with `bindings.vector_store_ids`. OpenAI handles retrieval from the already indexed documents and returns answer text and file citations. Chat attachments go directly in the Responses request without creating hosted Files resources. The generated app does not upload permanent knowledge documents, create vector stores, run the setup interpreter, or call the Agents API. Use an API key with access to the same OpenAI project that owns the store; copying the ZIP to another machine does not copy or transfer the hosted knowledge.
+The generated app is self-contained: it reads the saved manifest and does not need the framework running or, for Auto, the original policy file. Its bundled router classifies bounded evidence through Decisions; original files go to the answering Responses request. The optional prompt-specific assessment and authoritative selection/fallback reasons remain visible in Routing status and saved history. When knowledge is bound, its Responses request declares `file_search` with `bindings.vector_store_ids`. OpenAI handles retrieval from the already indexed documents and returns answer text and file citations. Chat attachments go directly in the Responses request without creating hosted Files resources. Standalone apps do not upload permanent knowledge documents, create vector stores or run the setup interpreter. An explicitly selected Agents app instead uses managed sessions, a workspace file intake path and an app-scoped Vector Stores Search bridge; it does not reuse the Responses hosted-tool payload. Managed runs/events/artifacts have their own private storage and retention. See [the lifecycle guide](docs/managed-workshop.md). Use an API key with access to the same OpenAI project that owns the store; copying the ZIP to another machine does not copy or transfer the hosted knowledge.
 
 ## Attach files to chat
 
@@ -654,7 +706,7 @@ Version **0.1.1** adds this feature to the public framework. The bottom-left lab
 
 ## OpenAI APIs and tools
 
-Chat answers/tools and setup inference use **`POST https://api.openai.com/v1/responses`**. Optional Auto classification uses **`POST https://api.openai.com/v1/decisions`**; fixed apps and sole-eligible-candidate routes skip that call. The framework's knowledge uploader also calls the Files and Vector Stores APIs listed below. All OpenAI calls run on the server; there is no OpenAI credential in browser requests.
+Responses chat answers/tools and setup inference use **`POST https://api.openai.com/v1/responses`**. Optional Auto classification uses **`POST https://api.openai.com/v1/decisions`**; fixed apps and sole-eligible-candidate routes skip that call. The framework's knowledge uploader also calls the Files and Vector Stores APIs listed below. All OpenAI calls run on the server; there is no OpenAI credential in browser requests.
 
 | Caller / feature | API or tool | When used |
 | --- | --- | --- |
@@ -665,7 +717,7 @@ Chat answers/tools and setup inference use **`POST https://api.openai.com/v1/res
 | Framework: indexing progress | Vector Stores API `GET /v1/vector_stores/{id}/file_batches/{batch_id}` | Checks completion and failed/cancelled counts before binding |
 | Framework and converted app: Auto routing | Decisions API `POST /v1/decisions`, two typed choices using `gpt-6-luna` | Once before an Auto answer when multiple candidates are eligible; bounded text/metadata evidence only |
 | Framework and converted app: routing explanation | Responses API `POST /v1/responses` with Structured Outputs, `gpt-6-luna`, `store: false` and no tools | Once after a normal Auto classification; generates a brief public request assessment from the same bounded evidence, with separate usage; never changes selection |
-| Converted app: chat | Responses API, with `stream: true` for the web chat | Each app conversation turn, using the fixed or selected answer model |
+| Converted Responses app: chat | Responses API, with `stream: true` for the web chat | Each app conversation turn, using the fixed or selected answer model |
 | Framework and converted app: chat attachments | Responses inline `input_file` and `input_image` content | Explicitly selected/dropped files sent with a message; no Files/Vector Stores call |
 | Converted app: structured output | Responses `text.format` with the configured object JSON Schema | If `runtime.output_schema` is set |
 | Converted app: web search | Responses hosted `web_search` tool | If enabled in `runtime.hosted_tools` |
@@ -674,17 +726,17 @@ Chat answers/tools and setup inference use **`POST https://api.openai.com/v1/res
 | Converted app: knowledge retrieval | Responses hosted `file_search` | If existing `bindings.vector_store_ids` are configured |
 | Converted app: backend integrations | Responses function calling plus local registered Python handlers | If explicitly bound to reviewed read-only tools |
 
-Responses requests use `store: false`. This controls API response storage; it is not a guarantee about every aspect of provider data handling. Uploaded files and vector stores remain in your API project until removed or expired under OpenAI's policies; `store: false` does not delete them. See OpenAI's documentation and your project's policies.
+| Agents app / Studio chat | Agents API session create/retrieve/delete, event stream/input events, turn/item retrieval | Managed runtime only; session identity persists across turns |
+| Agents input files | Inline `environment.files` or Files API `purpose=user_data`, then environment Files API for follow-ups | Explicit chat attachments staged in the hosted workspace |
+| Agents knowledge | Vector Stores `retrieve`, file inventory and `POST /v1/vector_stores/{id}/search` | Only stores bound to the app; reviewed `search_knowledge` function |
+| Agents deliverables | Session Artifacts list/content | Completed-turn outputs, downloaded and validated by the server |
+| Agents cleanup | Session delete and Files delete | Owned runtime resources only; shared knowledge retained |
 
-**Not implemented:** direct Embeddings API calls, separate Images API endpoints, the Agents API/SDK, remote MCP connections, Realtime, transcription, speech synthesis, and moderation integrations. Hosted image generation and file search run through Responses. Original GPT Actions do not automatically become executable integrations. The Files API's `assistants` purpose is a file-use label; this framework does not call the Assistants API.
+Responses requests use `store: false`. Agents sessions have separate provider-managed persistence; that setting does not apply to them. This controls API response storage; it is not a guarantee about every aspect of provider data handling. Uploaded files and vector stores remain in your API project until removed or expired under OpenAI's policies; `store: false` does not delete them. See OpenAI's documentation and your project's policies.
 
-Adding knowledge files or Actions does not switch the generated app to Agents API.
-Knowledge retrieval uses Responses `file_search` after the uploader creates and binds
-an indexed vector store, or you supply one manually. Actions use Responses function calling after you register and bind
-reviewed backend handlers. An Agents API runtime would require a separate
-implementation. It is a general-purpose managed agent runtime, not a conversion
-requirement for Custom GPTs or Workspace agents; see OpenAI's
-[runtime comparison](https://developers.openai.com/api/docs/guides/agents).
+**Not implemented:** direct Embeddings API calls, separate Images API endpoints, the separate Agents SDK orchestration loop, remote MCP connections, Realtime, transcription, speech synthesis, and moderation integrations. Hosted image generation and file search run through Responses. Original GPT Actions do not automatically become executable integrations. The Files API's `assistants` purpose is a file-use label; this framework does not call the Assistants API.
+
+Adding knowledge files or Actions does not switch the generated app to Agents API. The owner explicitly selects the runtime. Responses uses hosted `file_search` and application-owned function rounds. Agents uses managed sessions plus the knowledge/function adapters described above. This is a general-purpose runtime choice, not a requirement for Custom GPT or Workspace-agent conversion. See the [Agents API quickstart](https://developers.openai.com/api/docs/guides/agents-api/quickstart) and [Studio implementation guide](docs/managed-workshop.md).
 
 The separate [Workspace Agents API](https://learn.chatgpt.com/workspace-agents/trigger-runs)
 triggers published agents that remain in ChatGPT. This framework does not implement
@@ -867,11 +919,11 @@ For shared hosting, add authentication, user-owned sessions, tenant isolation, H
 - No behavior-parity guarantee, model-availability discovery, production hosting, accounts, or billing system.
 - No private GPT scraping or automatic Action execution. Knowledge uploads/indexing require explicit file selection in the builder; standalone apps retrieve from the resulting store and do not expose upload controls.
 - No full free-form, multi-field editor: AI interprets the current guided step and its clarification history.
-- No resumable streams or rich-text editing of user messages.
+- Responses streams do not resume after disconnect. Agents observers replay saved public events and reconcile provider work. User-message rich-text editing is not implemented.
 - Auto routing does not extract binary documents/images, dynamically discover prices/access, grade answers, or automatically generate a second answer. Policy declarations and context estimates still require representative evaluation.
-- File citations display filenames; source URL citations display links.
+- Responses file citations display filenames; Agents knowledge citations link bounded retrieved passages. Source URL citations display links.
 - Generated images are displayed, but image bytes and internal tool outputs are not replayed across turns; persistent image-editing workflows need an adapter.
-- Code Interpreter artifact downloads are not implemented.
+- Responses Code Interpreter artifact downloads are not implemented; Agents hosted workspace artifacts use the validated download path.
 - Current conversation limits are 80 stored messages (40 saved turns, including partial answers and continuations), 160,000 history/input characters, and 16,000 characters per user message.
 - Voice, exact games/scoring, verified quotation workflows, and graph visualizations need domain extensions.
 
@@ -888,7 +940,7 @@ Tests use fake providers, temporary app catalogs, and isolated history. They cov
 Streaming tests also verify that text arrives before provider completion, interrupted/disconnected turns are not committed, function-call rounds still work, and SSE parsing preserves UTF-8. Optional browser-stream decoder tests use Node's built-in test runner without npm dependencies:
 
 ```sh
-node --test tests/test_chat_stream.js tests/test_knowledge_ui.js tests/test_chat_attachments.js tests/test_routing_ui.js
+node --test tests/test_chat_stream.js tests/test_knowledge_ui.js tests/test_chat_attachments.js tests/test_routing_ui.js tests/test_workshop_ui.js
 ```
 
 To also build and test the real Docker image, start Docker and run:
@@ -896,6 +948,8 @@ To also build and test the real Docker image, start Docker and run:
 ```sh
 GPTAPPS_TEST_DOCKER=1 python3 -m unittest discover -s tests -v
 ```
+
+For optional local SDK launcher coverage, first create a disposable environment with `requirements-agents.txt`, then set `GPTAPPS_TEST_AGENTS_VENV` to its absolute path. The suite makes no OpenAI requests. With Docker enabled, it also builds Agents-enabled Studio and standalone images and verifies the pinned SDK/assets.
 
 The Docker test checks the included Python version, custom-port startup, standalone packaging, and saved-app persistence across container restarts. It uses synthetic credentials and never calls OpenAI.
 
@@ -908,6 +962,8 @@ python3 tests/browser_smoke.py
 ```
 
 The browser test uses the public example and a fake provider. It exercises live streaming, Markdown, safe HTML/links, saved-message rendering, sources, failure recovery, AI-assisted setup with clarifications, standalone downloads, mobile layout, and origin restrictions. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use an existing Chromium binary. Screenshots are written to the ignored `preview/` folder.
+
+Managed tests additionally cover submission deduplication, durable event tails, browser disconnect, process recovery, unknown outcomes, cancel/deadline races, knowledge scoping, replay-safe tools, artifact validation/cleanup, fixed-model setup and portable optional-SDK exports. Owner-reviewed comparison tooling is documented in [Evaluate before production](docs/managed-workshop.md#evaluate-before-production). A release check holds on unreviewed/stale evidence.
 
 Before relying on a migration, also test representative tasks against a live API model in your own project. Mock tests do not establish semantic interpretation quality or access to every hosted tool.
 

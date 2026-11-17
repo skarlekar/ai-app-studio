@@ -54,10 +54,10 @@ class ManagedRuntime:
             if not tool or not tool.read_only or not getattr(tool,'replay_safe',False):
                 raise ValueError(f'Agents tool {name} must be registered, read_only and explicitly replay_safe')
             if name=='search_knowledge':raise ValueError('search_knowledge is reserved for the knowledge adapter')
-            validate_schema(tool.parameters);tools.append(tool.declaration())
+            validate_schema(tool.parameters);tools.append({k:v for k,v in tool.declaration().items() if k!='strict'})
         if app['bindings']['vector_store_ids']:
             tools.append({'type':'function','name':'search_knowledge','description':'Search this application’s bound knowledge. Cite returned filenames and source IDs.',
-                          'parameters':KNOWLEDGE_SCHEMA,'strict':True})
+                          'parameters':KNOWLEDGE_SCHEMA})
         if 'web_search' in app['runtime']['hosted_tools']:tools.append({'type':'web_search'})
         return settings,tools,names
 
@@ -137,6 +137,7 @@ class ManagedRuntime:
                 self._state(run_id,'cancelled');return
             self._state(run_id,'reconnecting' if recover else 'preparing')
             revision=self._revision(app)
+            self.store.update(run_id,knowledge_revision=revision)
             conv=self.store.conversation(app['id'],run['session_id'])
             if conv['knowledge_revision'] and revision!=conv['knowledge_revision']:
                 raise ValueError('Knowledge collection changed; start a new conversation')
@@ -179,7 +180,9 @@ class ManagedRuntime:
             current=self.store.internal(run_id)
             if current['state'] in STOPPED:return
             status=getattr(error,'status_code',None)
-            if status in (400,401,403,404,429):self._state(run_id,'failed',provider_error(error))
+            if status in (400,401,403,404,429):
+                if current.get('provider_session_id'):self._abort(run_id,provider_error(error))
+                else:self._state(run_id,'failed',provider_error(error))
             elif current.get('provider_session_id'):
                 try:self._reconnect(run_id)
                 except Exception:self._state(run_id,'needs_reconciliation',provider_error(error))
@@ -231,7 +234,8 @@ class ManagedRuntime:
                     self._observe_provider(run_id,events)
                 if self.store.internal(run_id)['state'] in STOPPED:return
             except (ValueError,):raise
-            except Exception:
+            except Exception as error:
+                if getattr(error,'status_code',None) in (400,401,403,404,429):raise
                 self._state(run_id,'reconnecting','Connection interrupted; checking saved provider work')
                 if self.stop.wait(.2*(attempt+1)):return
         self._state(run_id,'needs_reconciliation','Provider work could not be reconciled. Refresh saved status before retrying; do not resubmit this task.')
@@ -251,7 +255,7 @@ class ManagedRuntime:
         run=self.store.internal(run_id);kind=event.get('type','')
         sid=event.get('session_id') or event.get('session',{}).get('id')
         if sid and not run.get('provider_session_id'):
-            self.store.bind(run_id,sid,event.get('session',{}).get('environment',{}).get('id'))
+            self.store.bind(run_id,sid,event.get('session',{}).get('environment',{}).get('id'),run.get('knowledge_revision'))
         if sid and run.get('provider_session_id') and sid!=run['provider_session_id']:raise ValueError('Mismatched provider session event')
         tid=event.get('turn_id')
         if kind=='agent.session.turn.created' and not event.get('turn',{}).get('subagent_id'):
@@ -375,6 +379,9 @@ class ManagedRuntime:
             for event in events:after=event['sequence'];yield event
             run=self.store.get(app_id,run_id)
             if run['state'] in STOPPED:
+                # Completion may commit between the event query and this snapshot.
+                # Drain the durable tail (including pages) before synthesizing a terminal event.
+                if self.store.events(app_id,run_id,after):continue
                 if run['state']=='completed' and not any(e['type']=='done' for e in events):yield {'type':'done',**run['result']}
                 elif run['state']!='completed':yield {'type':'error','error':run.get('error') or 'Task cancelled','run_id':run_id,'state':run['state']}
                 return
@@ -392,6 +399,15 @@ class ManagedRuntime:
                 self.store.update(run_id,cancel_sent=True)
             except Exception:return self.store.update(run_id,error='Cancellation could not be confirmed; reconcile the provider turn')
         elif not run.get('provider_session_id') and not run.get('input_sent'):self._state(run_id,'cancelled')
+        return self.store.get(app_id,run_id)
+
+    def reconcile(self,app_id,run_id):
+        run=self.store.get(app_id,run_id)
+        if run['state'] in TERMINAL:return run
+        if not run.get('provider_session_id'):
+            raise ValueError('Provider session ID is unknown; inspect OpenAI Agents logs for this run ID before resubmitting')
+        self._state(run_id,'reconnecting')
+        self._launch(run_id,True)
         return self.store.get(app_id,run_id)
 
     def cleanup(self,app_id,session_id):

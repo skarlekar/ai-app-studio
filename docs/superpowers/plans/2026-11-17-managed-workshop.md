@@ -31,34 +31,34 @@
 ## Task 1: Configuration and provider contract
 **Files:** spec.py, setup.py, agents_config.py, agents_client.py; tests/test_agents_config.py, tests/test_agents_client.py.
 **Interfaces:** validate_agents_config(runtime)->dict; AgentsClient wraps the official sessions/files/vector-store interfaces and provides safe errors.
-- [ ] Add failing tests for legacy compatibility, explicit Agents model, Auto rejection, unsupported capability blockers, SDK optional loading and safe SDK request construction.
-- [ ] Run the tests and observe failure; implement versioned validation and deterministic runtime setup.
-- [ ] Verify the tests pass; commit.
+- [x] Add failing tests for legacy compatibility, explicit Agents model, Auto rejection, unsupported capability blockers, SDK optional loading and safe SDK request construction.
+- [x] Run the tests and observe failure; implement versioned validation and deterministic runtime setup.
+- [x] Verify the tests pass; commit.
 
 ## Task 2: Durable run and artifact storage
 **Files:** runs.py; tests/test_runs.py.
 **Interfaces:** RunStore.create(app,session_id,submission_id,message,attachments)->run; get/list/events/update; tool-result ledger; artifact metadata/content; cleanup ownership.
-- [ ] Add failing tests for duplicate submission/config changes/cross-app IDs, one active turn, monotonic events, binary privacy, path traversal/size limits and restart persistence.
-- [ ] Implement transactional records and private bounded file storage; verify tests; commit.
+- [x] Add failing tests for duplicate submission/config changes/cross-app IDs, one active turn, monotonic events, binary privacy, path traversal/size limits and restart persistence.
+- [x] Implement transactional records and private bounded file storage; verify tests; commit.
 
 ## Task 3: Managed execution and recovery
 **Files:** agents_runtime.py, runtime.py, tools.py; tests/test_agents_runtime.py.
 **Interfaces:** ManagedRuntime.start/observe/cancel/recover/delete; Runtime facade preserves Responses API and exposes managed run service.
-- [ ] Add failing fake-provider tests for streaming before terminal state, browser disconnect, follow-ups, call deduplication, ambiguous submission, tool crash window, cancel, expired environments, knowledge scoping, artifacts and retention.
-- [ ] Implement supervised work, provider reconciliation, cancellation/deadline, knowledge bridge and owned-resource cleanup.
-- [ ] Verify intended turn completion, source citations and safe error behavior; commit.
+- [x] Add failing fake-provider tests for streaming before terminal state, browser disconnect, follow-ups, call deduplication, ambiguous submission, tool crash window, cancel, expired environments, knowledge scoping, artifacts and retention.
+- [x] Implement supervised work, provider reconciliation, cancellation/deadline, knowledge bridge and owned-resource cleanup.
+- [x] Verify intended turn completion, source citations and safe error behavior; commit.
 
 ## Task 4: Product integration
 **Files:** web.py, chat.html/js/css, workshop.js/css, routing.js; tests/test_agents_http.py, tests/test_workshop_ui.js.
 **Interfaces:** existing /api/chat plus scoped /api/runs/{id}, /events, /cancel and /api/artifacts/{id}/content; submission IDs; runtime setup controls and task timeline.
-- [ ] Add failing HTTP/client tests for runtime choice, app isolation, cancel/reconnect, download headers and legacy SSE compatibility.
-- [ ] Implement runtime/model controls, capability preflight, run status/reattach and downloads; verify Studio and standalone behaviors.
-- [ ] Capture and check UI; commit.
+- [x] Add failing HTTP/client tests for runtime choice, app isolation, cancel/reconnect, download headers and legacy SSE compatibility.
+- [x] Implement runtime/model controls, capability preflight, run status/reattach and downloads; verify Studio and standalone behaviors.
+- [x] Capture and check UI; commit.
 
 ## Task 5: Portable builds, evaluation and documentation
 **Files:** build.py, version.py, pyproject.toml, launchers, Docker templates, README.md, docs/managed-workshop.md, evaluation fixtures/runner; export and launcher tests.
 **Interfaces:** standalone dependency metadata, `--agents` setup path, runtime-aware build allowlist, versioned evaluation report with no unearned release-quality claims.
-- [ ] Add failing tests for optional SDK packaging, clean standalone start, Docker assets and evaluation release hold states.
-- [ ] Implement packaging, launchers, documentation, architecture diagrams, release notes and evaluation tooling.
-- [ ] Run full unittest/Node suites, offline end-to-end browser verification and bounded live check when configured.
+- [x] Add failing tests for optional SDK packaging, clean standalone start, Docker assets and evaluation release hold states.
+- [x] Implement packaging, launchers, documentation, architecture diagrams, release notes and evaluation tooling.
+- [x] Run full unittest/Node suites, offline end-to-end browser verification and bounded live check when configured.
 - [ ] Request fresh whole-branch review; resolve important findings with reproducing tests; commit and push feature branch only.

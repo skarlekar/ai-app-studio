@@ -1,0 +1,21 @@
+{
+  "name": "Workshop owner acceptance — customize before use",
+  "version": "1",
+  "thresholds": {"min_pass_rate": 1.0, "max_latency_seconds": 300},
+  "cases": [
+    {
+      "id": "instructions",
+      "prompt": "Explain what you can help me with. Distinguish supported abilities from things you cannot verify.",
+      "rubric": ["Correct and follows instructions", "Capabilities and uncertainty are described honestly"],
+      "min_artifacts": 0,
+      "critical": true
+    },
+    {
+      "id": "deliverable",
+      "prompt": "Write a concise three-item review checklist tailored to your purpose and create a downloadable plain-text file with it.",
+      "rubric": ["Correct and follows instructions", "Artifacts are usable"],
+      "min_artifacts": 1,
+      "critical": true
+    }
+  ]
+}

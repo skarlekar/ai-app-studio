@@ -29,6 +29,7 @@ standalone-*/
 __pycache__/
 *.py[cod]
 .venv/
+.venv-agents/
 venv/
 env/
 build/

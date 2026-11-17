@@ -79,6 +79,16 @@ class ManagedRuntimeTests(unittest.TestCase):
         events=self.runtime.observe(self.app['id'],run['id']);next(events);events.close()
         self.client.wait.set();self.assertEqual(self.done(run)['state'],'completed')
 
+    def test_observer_drains_events_committed_before_terminal_snapshot(self):
+        from unittest.mock import patch
+        completed={'state':'completed','result':{'session_id':'managed-test','message':{'content':'Final'}}}
+        batches=[[],[{'type':'delta','sequence':1,'delta':'Final'}],
+                 [{'type':'delta','sequence':1,'delta':'Final'}],[],[]]
+        with patch.object(self.runtime.store,'get',return_value=completed), patch.object(self.runtime.store,'events',side_effect=batches):
+            events=list(self.runtime.observe(self.app['id'],'synthetic'))
+        self.assertTrue(any(e['type']=='delta' for e in events))
+        self.assertEqual(events[-1]['type'],'done')
+
     def test_ambiguous_initial_submission_is_not_retried(self):
         self.client.fail_create=True;run=self.start();self.assertEqual(self.done(run)['state'],'needs_reconciliation')
         self.runtime.recover();time.sleep(.03);self.assertEqual(len(self.client.created),1)
@@ -112,6 +122,32 @@ class ManagedRuntimeTests(unittest.TestCase):
         result=self.done(self.start())
         self.assertEqual(result['state'],'completed',result)
         self.assertEqual(result['result']['message']['citations'][0]['title'],'Guide.txt')
+
+    def test_completion_on_initial_stream_pins_knowledge_revision(self):
+        self.app['bindings']['vector_store_ids']=['vs-owner']
+        original=self.client.create
+        @contextmanager
+        def complete_immediately(*args):
+            with original(*args) as events:
+                def stream():
+                    yield from events
+                    self.client.status='completed'
+                    yield {'type':'agent.session.idle','session':self.client.session(self.client.sid)}
+                yield stream()
+        self.client.create=complete_immediately
+        run=self.start();self.assertEqual(self.done(run)['state'],'completed')
+        self.assertTrue(self.runtime.store.conversation(self.app['id'],run['session_id'])['knowledge_revision'])
+
+    def test_tool_delivery_error_does_not_leave_provider_work_unmanaged(self):
+        self.registry.add(FunctionTool('lookup','Lookup',{'type':'object','properties':{},'additionalProperties':False},lambda:'ok',replay_safe=True))
+        self.app['bindings']['function_tools']=['lookup']
+        self.client.actions=[{'type':'function_call','turn_id':'turn-1','call_id':'call-1','name':'lookup','arguments':{}}]
+        def rejected(*args):
+            error=RuntimeError('invalid result');error.status_code=400;raise error
+        self.client.tool_result=rejected
+        result=self.done(self.start())
+        self.assertEqual(result['state'],'failed')
+        self.assertEqual(self.client.status,'cancelled')
 
     def test_artifact_must_belong_to_completed_turn(self):
         self.client.metadata=[{'id':'art-test','session_id':'sess-test','turn_id':'turn-1','path':'/workspace/outputs/report.txt','size_bytes':5}]

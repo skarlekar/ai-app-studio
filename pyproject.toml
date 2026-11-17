@@ -11,6 +11,9 @@ license = {file = "LICENSE"}
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+agents = ["openai==3.13.0"]
+
 [tool.setuptools]
 packages = ["gptapps"]
 
@@ -21,4 +24,4 @@ version = {attr = "gptapps.version.VERSION"}
 gptapps = "gptapps.cli:main"
 
 [tool.setuptools.package-data]
-gptapps = ["chat.html", "chat.js", "knowledge.js", "attachments.js", "routing.js", "routing.css", "chat.css", "LICENSE", "templates/*", "templates/.dockerignore", "vendor/*", "icons/*"]
+gptapps = ["chat.html", "chat.js", "knowledge.js", "attachments.js", "routing.js", "routing.css", "chat.css", "workshop.js", "workshop.css", "LICENSE", "templates/*", "templates/.dockerignore", "vendor/*", "icons/*"]

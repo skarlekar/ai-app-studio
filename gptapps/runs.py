@@ -98,6 +98,12 @@ class RunStore:
         return {**json.loads(row['record']),'submission_id':row['submission_id'],
                 'payload':json.loads(row['payload']) if row['payload'] else None}
 
+    def find_submission(self,app_id,submission_id):
+        with self.db() as db:
+            row=db.execute('SELECT record FROM runs WHERE app_id=? AND submission_id=?',(app_id,submission_id)).fetchone()
+        if not row:raise ValueError('Run not found')
+        return json.loads(row[0])
+
     def internal(self,run_id):
         with self.db() as db:row=db.execute('SELECT * FROM runs WHERE id=?',(run_id,)).fetchone()
         if not row:raise ValueError('Run not found')
@@ -246,8 +252,14 @@ class RunStore:
             db.execute('UPDATE runs SET payload=NULL WHERE session_id=?',(session_id,))
             for row in db.execute('SELECT id,record FROM runs WHERE session_id=?',(session_id,)).fetchall():
                 record=json.loads(row['record']);record.pop('sources',None);record['artifacts_expired']=True
+                if record.get('result'):
+                    for item in record['result']['message'].get('artifacts',[])+record['result']['message'].get('citations',[]):item['expired']=True
+                for item in record.get('artifacts',[]):item['expired']=True
                 db.execute('UPDATE runs SET record=? WHERE id=?',(encode(record),row['id']))
-            db.execute('UPDATE conversations SET archived=1 WHERE id=?',(session_id,))
+            messages=json.loads(db.execute('SELECT messages FROM conversations WHERE id=?',(session_id,)).fetchone()[0])
+            for message in messages:
+                for item in message.get('artifacts',[])+message.get('citations',[]):item['expired']=True
+            db.execute('UPDATE conversations SET archived=1,messages=? WHERE id=?',(encode(messages),session_id))
 
     def pending_cleanup(self):
         with self.db() as db:

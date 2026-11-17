@@ -27,6 +27,10 @@ except OSError:
     sys.exit('This port is unavailable. Stop the existing app or choose --port ANOTHER_PORT.')
 PY
 CONFIGURED_MODEL="$("$PYTHON_BIN" -c 'from gptapps.spec import load; print(load("app.json")["runtime"].get("model") or (load("app.json")["runtime"].get("routing") or {}).get("fallback_model") or "")')"
+if [[ "$("$PYTHON_BIN" -c 'from gptapps.spec import load; print(load("app.json")["runtime"]["api"])')" == agents ]]; then
+  AGENTS_ENABLED=1
+fi
+launcher_agents
 launcher_credentials "$CONFIGURED_MODEL"
 launcher_directories
 "$PYTHON_BIN" -m gptapps serve --apps "$FRAMEWORK_ROOT/app.json" --data "$DATA_DIR" --port "$PORT" &

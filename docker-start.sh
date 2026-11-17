@@ -14,7 +14,7 @@ if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
   echo "Container $CONTAINER already exists. Stop it first or set GPTAPPS_CONTAINER_NAME to another name." >&2
   exit 1
 fi
-docker build --tag "$IMAGE" "$FRAMEWORK_ROOT"
+docker build --build-arg "WITH_AGENTS=$AGENTS_ENABLED" --tag "$IMAGE" "$FRAMEWORK_ROOT"
 ROUTING_ARGS=(--env "GPTAPPS_PORT=$PORT")
 if [[ -n "${OPENAI_ROUTING_POLICY_FILE:-}" ]]; then
   ROUTING_ARGS+=(--volume "$OPENAI_ROUTING_POLICY_FILE:/config/routing-policy.json:ro" --env "OPENAI_ROUTING_POLICY_FILE=/config/routing-policy.json")

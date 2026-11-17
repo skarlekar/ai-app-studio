@@ -4,6 +4,9 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     GPTAPPS_PORT=8765
 WORKDIR /app
+ARG WITH_AGENTS=0
+COPY requirements-agents.txt /app/requirements-agents.txt
+RUN if [ "$WITH_AGENTS" = "1" ]; then pip install --no-cache-dir -r requirements-agents.txt; fi
 
 # Only public source and examples enter the image.
 COPY gptapps/ /app/gptapps/

@@ -97,7 +97,7 @@ class AgentsClient:
 
 def sdk_available():
     try:
-        from openai import OpenAI
-        return hasattr(OpenAI,'beta')
+        from openai.resources.beta.agents import Agents
+        return hasattr(Agents,'sessions')
     except ImportError:
         return False

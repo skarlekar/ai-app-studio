@@ -19,6 +19,14 @@ def main():
     convert.add_argument("--out", required=True, type=Path)
     check = sub.add_parser("check", help="Analyze an application manifest")
     check.add_argument("spec", type=Path)
+    check.add_argument('--release-report',type=Path,help='Require a current, executed and human-reviewed evaluation report')
+    evaluation=sub.add_parser('evaluate',help='Prepare an owner-review report; --execute explicitly runs paid baseline/candidate requests')
+    evaluation.add_argument('spec',type=Path)
+    evaluation.add_argument('--suite',type=Path,required=True)
+    evaluation.add_argument('--out',type=Path,required=True)
+    evaluation.add_argument('--execute',action='store_true')
+    evaluation.add_argument('--data',type=Path,default=Path('.gptapps-data/evaluation-runs'))
+    evaluation.add_argument('--extension',action='append',default=[])
     server = sub.add_parser("serve", help="Run the local chat application")
     server.add_argument("--apps", required=True, type=Path)
     server.add_argument("--data", type=Path, default=Path(".gptapps-data"))
@@ -44,10 +52,28 @@ def main():
                 "scope": "Configuration import; runtime-ready does not certify behavioral equivalence or production readiness."})
             print(f"Imported {len(apps)} GPTs into {args.out}. Review report.json before running.")
         elif args.command == "check":
-            report = analyze(load(args.spec))
+            app=load(args.spec);report = analyze(app)
+            if args.release_report:
+                from .evaluation import release_gate
+                report['evaluation']=release_gate(app,json.loads(args.release_report.read_text()))
             print(json.dumps(report, ensure_ascii=False, indent=2))
-            if not report["runtime_ready"]:
+            if not report["runtime_ready"] or (args.release_report and not report['evaluation']['approved']):
                 raise SystemExit(2)
+        elif args.command=='evaluate':
+            from .evaluation import prepare_report,run_suite,release_gate
+            app=load(args.spec);suite=json.loads(args.suite.read_text())
+            report=prepare_report(app,suite)
+            if args.execute:
+                from .runtime import Runtime
+                registry=Registry()
+                for reference in args.extension:registry.load(reference)
+                runtime=Runtime(args.data,registry=registry)
+                try:report=run_suite(app,suite,lambda config,prompt,files:runtime.chat(config,prompt,attachments=files))
+                finally:runtime.close()
+            args.out.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+            with args.out.open('x') as file:
+                args.out.chmod(0o600);json.dump(report,file,ensure_ascii=False,indent=2);file.write('\n')
+            print(json.dumps({'report':str(args.out),'evaluation':release_gate(app,report)},indent=2))
         elif args.command == "serve":
             from .web import serve
             registry = Registry()

@@ -68,3 +68,14 @@ class RunStoreTests(unittest.TestCase):
         self.assertEqual(self.store.tool_begin(run['id'],'turn','call','lookup',{'q':'x'})['result'],result)
         with self.assertRaises(ValueError):self.store.tool_begin(run['id'],'turn','call','different',{})
 
+    def test_archive_expires_saved_downloads_and_source_links_without_losing_text(self):
+        run=self.create();message={'role':'assistant','content':'Keep this answer',
+            'artifacts':[{'id':'a'*32,'name':'answer.txt','size':5}],
+            'citations':[{'source_id':'file-test','run_id':run['id'],'title':'Guide'}]}
+        self.store.finish(run['id'],message);self.store.archive(self.app['id'],run['session_id'])
+        saved=self.store.get_session(self.app['id'],run['session_id'])
+        self.assertEqual(saved['messages'][-1]['content'],'Keep this answer')
+        self.assertTrue(saved['messages'][-1]['artifacts'][0]['expired'])
+        self.assertTrue(saved['messages'][-1]['citations'][0]['expired'])
+        self.assertTrue(saved['run']['result']['message']['artifacts'][0]['expired'])
+

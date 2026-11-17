@@ -3,6 +3,8 @@
 !Dockerfile
 !.dockerignore
 !LICENSE
+!requirements-agents.txt
+!requirements.txt
 !gptapps/
 gptapps/**
 !gptapps/*.py
@@ -14,6 +16,8 @@ gptapps/**
 !gptapps/routing.css
 !gptapps/build-info.json
 !gptapps/chat.css
+!gptapps/workshop.js
+!gptapps/workshop.css
 !gptapps/icons/
 gptapps/icons/**
 !gptapps/icons/*.svg

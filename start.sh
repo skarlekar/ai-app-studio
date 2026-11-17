@@ -26,6 +26,7 @@ try:
 except OSError:
     sys.exit('This port is unavailable. Stop the existing app or choose --port ANOTHER_PORT.')
 PY
+launcher_agents
 launcher_credentials
 launcher_directories
 "$PYTHON_BIN" -m gptapps serve --apps "$APPS_DIR" --data "$DATA_DIR" --port "$PORT" --builder &
