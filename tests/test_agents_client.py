@@ -5,7 +5,7 @@ from gptapps.agents_client import AgentsClient, provider_error
 
 class Recorder:
     def __init__(self):self.calls=[]
-    def create(self,**kwargs):self.calls.append(kwargs);return {'id':'sess-test'}
+    def create(self,*args,**kwargs):self.calls.append(kwargs);return {'id':'sess-test'}
 
 
 class AgentsClientTests(unittest.TestCase):

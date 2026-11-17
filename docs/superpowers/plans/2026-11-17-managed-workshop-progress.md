@@ -9,3 +9,8 @@ Ruling: retain the dependency-free default; the official SDK is an optional Agen
 Pre-flight: configuration produces validated runtime settings for the run service; run service produces scoped snapshots/events for HTTP and UI; export must bundle every new module and optional dependency metadata.
 
 Task 1: in progress.
+
+Task 1: complete — 11 configuration/provider-contract tests pass; corrected the fake SDK recorder signature after verifying the official positional session-ID contract.
+Task 2: complete — 7 durable-run/artifact/tool-ledger tests pass.
+Ruling: SDK 3.13 lacks a typed review keyword although the public API documents it; use the SDK-supported extra_body={review:auto_review} parameter explicitly.
+Task 3: in progress.
